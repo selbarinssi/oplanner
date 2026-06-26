@@ -326,7 +326,7 @@
             <table class="cfg-tbl">
                 <thead><tr>
                     <th>Vehicle ID</th><th>Type</th><th>Capacity (CBM)</th>
-                    <th>City Assignment</th><th>Start Lat</th><th>Start Lng</th>
+                    <th>City Assignment</th><th>Primary Zone</th><th>Start Lat</th><th>Start Lng</th>
                     <th>Linked Satellite</th><th></th>
                 </tr></thead>
                 <tbody id="fleet-table-body"></tbody>
@@ -374,6 +374,7 @@ const CAS_TRS_SERVICES = [
 ];
 const ASSEMBLY_KW  = ["Furniture Assembly","After Sales Replacement","Complete Kitchen Installation"];
 const MAX_PTS = 20, DEL_PT = 1, ASY_PT = 2.5;
+const ADJACENCY_KM = 5; // areas within this distance are considered neighbours
 const PLANNABLE = new Set(['confirmed','unreachable']);
 
 const CITY_COORDS = {
@@ -569,6 +570,7 @@ document.getElementById('fleet-input').addEventListener('change', e => {
             type:           String(v['Type']||'Truck'),
             capacity:       parseFloat(v['Capacity'])||18.0,
             cityAssignment: String(v['Assignment']||v['City']||''),
+            primaryArea:    String(v['Primary Area']||v['Zone']||''),
             startLat:       parseFloat(v['Start Lat'])||null,
             startLng:       parseFloat(v['Start Lng'])||null,
             linkedSatellite:null,
@@ -753,6 +755,12 @@ function clearSession() {
     renderAll(); renderConfigTable(); renderCallsTable();
 }
 
+function coordsForArea(area, city) {
+    const base = CITY_COORDS[city] || [31.79, -7.09];
+    const off  = AREA_OFF[area] || [((strHash(area) & 0xFF) / 255 - 0.5) * 0.1, ((strHash(area + '_lng') & 0xFF) / 255 - 0.5) * 0.1];
+    return [base[0] + off[0], base[1] + off[1]];
+}
+
 function strHash(s) {
     let h = 0;
     for (let i = 0; i < s.length; i++) { h = Math.imul(31, h) + s.charCodeAt(i) | 0; }
@@ -813,7 +821,6 @@ function optimizeOrderSequence(orderList, origin) {
 //  AUTO-ASSIGN
 // ══════════════════════════════════════════════════
 function autoAssign() {
-    // Reset
     orders.forEach(o => { if (!PLANNABLE.has(o.status)) o.assignedTo = null; });
     optimizedRoutes = {};
     slotConflicts   = {};
@@ -823,13 +830,10 @@ function autoAssign() {
     const eligible = orders.filter(o => PLANNABLE.has(o.status));
 
     // ── STEP 1: BUILD CLUSTERS ──────────────────────────────────────
-    // Group eligible orders into city → area → slotBucket clusters.
-    // slotBucket: 'AM' | 'PM' | 'ANY' (no slot or unrecognised)
     function slotBucket(o) {
         const p = slotPriority(o.timeSlot);
         if (p === 999) return 'ANY';
-        if (p < 13)   return 'AM';
-        return 'PM';
+        return p < 13 ? 'AM' : 'PM';
     }
 
     const clusterMap = {};
@@ -838,10 +842,10 @@ function autoAssign() {
         const key  = `${city}||${o.area}||${slotBucket(o)}`;
         if (!clusterMap[key]) clusterMap[key] = {
             city, area: o.area, slot: slotBucket(o),
-            orders: [], volume: 0, pts: 0,
-            isTRS: isTRS(o),
+            orders: [], volume: 0, pts: 0, isTRS: isTRS(o),
+            centroid: coordsForArea(o.area, city),
         };
-        const c    = clusterMap[key];
+        const c     = clusterMap[key];
         const pCost = o.hasAssembly ? ASY_PT : DEL_PT;
         c.orders.push(o);
         c.volume += o.volume;
@@ -849,123 +853,139 @@ function autoAssign() {
     });
 
     // ── STEP 2: DETECT SLOT CONFLICTS ──────────────────────────────
-    // A conflict exists when the same city+area has both AM and PM clusters.
-    // We mark them now; the badge is applied after assignment.
-    const conflictKeys = new Set();
     const areaSlots = {};
     Object.values(clusterMap).forEach(c => {
-        const areaKey = `${c.city}||${c.area}`;
-        if (!areaSlots[areaKey]) areaSlots[areaKey] = new Set();
-        if (c.slot !== 'ANY') areaSlots[areaKey].add(c.slot);
+        const k = `${c.city}||${c.area}`;
+        if (!areaSlots[k]) areaSlots[k] = new Set();
+        if (c.slot !== 'ANY') areaSlots[k].add(c.slot);
     });
-    Object.entries(areaSlots).forEach(([areaKey, slots]) => {
-        if (slots.has('AM') && slots.has('PM')) conflictKeys.add(areaKey);
-    });
-
-    // Tag conflict clusters
+    const conflictAreaKeys = new Set(
+        Object.entries(areaSlots)
+            .filter(([,slots]) => slots.has('AM') && slots.has('PM'))
+            .map(([k]) => k)
+    );
     Object.values(clusterMap).forEach(c => {
-        c.hasConflict = conflictKeys.has(`${c.city}||${c.area}`);
+        c.hasConflict = conflictAreaKeys.has(`${c.city}||${c.area}`);
     });
 
-    // ── STEP 3: ASSIGN CLUSTERS (best-fit on pts tightness) ────────
-    // Sort clusters: TRS first, then by volume descending (biggest first).
+    // ── STEP 3: ASSIGN CLUSTERS (area-affinity scoring) ────────────
+    // Sort: TRS first, then biggest volume first
     const clusters = Object.values(clusterMap)
-        .sort((a, b) => {
-            if (a.isTRS !== b.isTRS) return a.isTRS ? -1 : 1;
-            return b.volume - a.volume;
-        });
+        .sort((a, b) => (a.isTRS !== b.isTRS ? (a.isTRS ? -1 : 1) : b.volume - a.volume));
 
-    // Track per-vehicle running totals for best-fit
+    // Per-vehicle running state
     const vState = {};
     activeV.forEach(v => {
-        vState[v.id] = { vol: 0, pts: 0 };
+        vState[v.id] = { vol: 0, pts: 0, lastCentroid: getVehicleOrigin(v) };
     });
 
-    clusters.forEach(cluster => {
-        const cityKey  = cluster.city.toLowerCase();
-        const isExpress = false; // clusters only go to trucks first
+    function scoreVehicle(v, cluster) {
+        const st = vState[v.id];
+        const isExpress = v.type.toUpperCase().includes('EXPRESS');
+        const lSat = vehicles.find(s => s.id === v.linkedSatellite);
 
-        // Candidate trucks for this cluster's city
-        const trucks = activeV.filter(v =>
-            v.cityAssignment.toLowerCase() === cityKey &&
-            !v.type.toUpperCase().includes('EXPRESS')
-        );
-        const expresses = activeV.filter(v =>
-            v.cityAssignment.toLowerCase() === cityKey &&
-            v.type.toUpperCase().includes('EXPRESS')
-        );
+        // Compute cluster pts cost accounting for satellite offload
+        const clusterPts = cluster.orders.reduce((s, o) => {
+            return s + (o.hasAssembly ? (lSat && !isExpress ? DEL_PT : ASY_PT) : DEL_PT);
+        }, 0);
 
-        // Best-fit: find truck where pts gap after assignment is smallest (tightest fit)
-        // while still respecting both caps
-        let bestV    = null;
-        let bestGap  = Infinity;
+        // Hard caps — vehicle excluded entirely if exceeded
+        if (st.vol + cluster.volume > v.capacity) return null;
+        if (st.pts + clusterPts > MAX_PTS)        return null;
 
-        for (const v of trucks) {
-            const lSat  = vehicles.find(s => s.id === v.linkedSatellite);
-            const st    = vState[v.id];
-            // For assembly orders on a truck with satellite, pts cost is DEL_PT not ASY_PT
-            const clusterPts = cluster.orders.reduce((s, o) => {
-                return s + (o.hasAssembly ? (lSat ? DEL_PT : ASY_PT) : DEL_PT);
-            }, 0);
-            const clusterVol = cluster.volume;
-
-            if (st.vol + clusterVol <= v.capacity && st.pts + clusterPts <= MAX_PTS) {
-                const gap = (MAX_PTS - (st.pts + clusterPts));
-                if (gap < bestGap) { bestGap = gap; bestV = v; }
-            }
+        // Area affinity
+        let affinity = 0;
+        const pa = (v.primaryArea || '').trim().toUpperCase();
+        const ca = cluster.area.toUpperCase();
+        if (pa === '') {
+            affinity = 100; // flexible vehicle — last resort
+        } else if (pa === ca) {
+            affinity = 1000; // owns this area
+        } else if (haversine(coordsForArea(v.primaryArea, v.cityAssignment), cluster.centroid) <= ADJACENCY_KM) {
+            affinity = 200; // adjacent neighbour
+        } else {
+            affinity = 0; // unrelated zone — only wins if nothing else fits
         }
 
-        if (bestV) {
-            // Assign all orders in this cluster to bestV
-            const lSat = vehicles.find(s => s.id === bestV.linkedSatellite);
-            const clusterPts = cluster.orders.reduce((s, o) => {
-                return s + (o.hasAssembly ? (lSat ? DEL_PT : ASY_PT) : DEL_PT);
-            }, 0);
-            cluster.orders.forEach(o => { o.assignedTo = bestV.id; });
-            vState[bestV.id].vol += cluster.volume;
-            vState[bestV.id].pts += clusterPts;
-            if (cluster.hasConflict) slotConflicts[bestV.id] = true;
+        // Best-fit tightness on pts (smaller gap = better packing)
+        const tightness = MAX_PTS - (st.pts + clusterPts);
+
+        // Geographic penalty — discourage jumping across city
+        const geoPenalty = haversine(st.lastCentroid, cluster.centroid) * 10;
+
+        return { score: affinity + (MAX_PTS - tightness) * 2 - geoPenalty, clusterPts, v };
+    }
+
+    clusters.forEach(cluster => {
+        const cityKey   = cluster.city.toLowerCase();
+        const isParcel  = cluster.orders.every(o => o.services.some(s => s.toLowerCase().includes('parcel')));
+        const trucks    = activeV.filter(v => v.cityAssignment.toLowerCase() === cityKey && !v.type.toUpperCase().includes('EXPRESS'));
+        const expresses = activeV.filter(v => v.cityAssignment.toLowerCase() === cityKey &&  v.type.toUpperCase().includes('EXPRESS'));
+
+        // Score all trucks, pick best
+        let best = null;
+        trucks.forEach(v => {
+            const r = scoreVehicle(v, cluster);
+            if (!r) return;
+            if (!best || r.score > best.score) best = r;
+        });
+
+        if (best) {
+            cluster.orders.forEach(o => { o.assignedTo = best.v.id; });
+            vState[best.v.id].vol          += cluster.volume;
+            vState[best.v.id].pts          += best.clusterPts;
+            vState[best.v.id].lastCentroid  = cluster.centroid;
+            if (cluster.hasConflict) slotConflicts[best.v.id] = true;
             return;
         }
 
-        // Try express vans for parcel-only clusters
-        if (cluster.orders.every(o => o.services.some(s => s.toLowerCase().includes('parcel')))) {
-            let bestExp = null; let bestExpGap = Infinity;
-            for (const v of expresses) {
-                const st   = vState[v.id];
+        // Try express vans for parcel clusters
+        if (isParcel) {
+            let bestExp = null;
+            expresses.forEach(v => {
                 const moms = vehicles.filter(m => m.linkedSatellite === v.id);
                 const mirrorPts = orders.filter(x =>
                     moms.some(m => m.id === x.assignedTo) && x.hasAssembly
                 ).reduce((s) => s + ASY_PT, 0);
                 const clusterPts = cluster.orders.reduce((s, o) =>
                     s + (o.hasAssembly ? ASY_PT : DEL_PT), 0);
-                if (st.vol + cluster.volume <= v.capacity &&
-                    st.pts + mirrorPts + clusterPts <= MAX_PTS) {
-                    const gap = MAX_PTS - (st.pts + mirrorPts + clusterPts);
-                    if (gap < bestExpGap) { bestExpGap = gap; bestExp = v; }
-                }
-            }
+                const st = vState[v.id];
+                if (st.vol + cluster.volume > v.capacity) return;
+                if (st.pts + mirrorPts + clusterPts > MAX_PTS) return;
+                const geoPenalty = haversine(st.lastCentroid, cluster.centroid) * 10;
+                const score = (MAX_PTS - (st.pts + mirrorPts + clusterPts)) * 2 - geoPenalty;
+                if (!bestExp || score > bestExp.score) bestExp = { score, clusterPts, v };
+            });
             if (bestExp) {
-                const clusterPts = cluster.orders.reduce((s, o) =>
-                    s + (o.hasAssembly ? ASY_PT : DEL_PT), 0);
-                cluster.orders.forEach(o => { o.assignedTo = bestExp.id; });
-                vState[bestExp.id].vol += cluster.volume;
-                vState[bestExp.id].pts += clusterPts;
-                if (cluster.hasConflict) slotConflicts[bestExp.id] = true;
+                cluster.orders.forEach(o => { o.assignedTo = bestExp.v.id; });
+                vState[bestExp.v.id].vol         += cluster.volume;
+                vState[bestExp.v.id].pts         += bestExp.clusterPts;
+                vState[bestExp.v.id].lastCentroid = cluster.centroid;
+                if (cluster.hasConflict) slotConflicts[bestExp.v.id] = true;
                 return;
             }
         }
 
-        // No vehicle fit → overflow: assign to first truck with a flag, or leave unassigned
-        if (trucks.length > 0) {
-            cluster.orders.forEach(o => {
-                o.assignedTo  = trucks[0].id;
-                o.isOverflow  = true;
-            });
-            vState[trucks[0].id].vol += cluster.volume;
-            if (cluster.hasConflict) slotConflicts[trucks[0].id] = true;
+        // Overflow — spill to geographically nearest vehicle with any remaining capacity
+        let nearestV = null, nearestDist = Infinity;
+        trucks.forEach(v => {
+            const st = vState[v.id];
+            if (st.vol + cluster.volume > v.capacity) return;
+            const d = haversine(st.lastCentroid, cluster.centroid);
+            if (d < nearestDist) { nearestDist = d; nearestV = v; }
+        });
+
+        if (nearestV) {
+            const lSat = vehicles.find(s => s.id === nearestV.linkedSatellite);
+            const clusterPts = cluster.orders.reduce((s, o) =>
+                s + (o.hasAssembly ? (lSat ? DEL_PT : ASY_PT) : DEL_PT), 0);
+            cluster.orders.forEach(o => { o.assignedTo = nearestV.id; o.isOverflow = true; });
+            vState[nearestV.id].vol         += cluster.volume;
+            vState[nearestV.id].pts         += clusterPts;
+            vState[nearestV.id].lastCentroid = cluster.centroid;
+            if (cluster.hasConflict) slotConflicts[nearestV.id] = true;
         }
-        // If no trucks at all for this city → stays unassigned (caught by ghost city)
+        // If truly nothing → stays unassigned, ghost city alert catches it
     });
 
     // ── STEP 4: BUILD ROUTES + TRAVEL BURDEN ───────────────────────
@@ -976,9 +996,7 @@ function autoAssign() {
         const seq    = optimizeOrderSequence(myOrd, origin);
         optimizedRoutes[vId] = seq.map(o => o.id);
 
-        // Travel burden: sum of haversine between consecutive stops including origin
-        let km = 0;
-        let prev = origin;
+        let km = 0, prev = origin;
         seq.forEach(o => {
             const c = coordsForOrder(o);
             km += haversine(prev, c);
@@ -1213,8 +1231,10 @@ function updateVehicle(i, field, val) {
 }
 
 function addNewVehicle() {
-    vehicles.push({id:'V-'+Date.now(),type:'Truck',capacity:18,cityAssignment:'Casablanca',startLat:null,startLng:null,linkedSatellite:null});
+    vehicles.push({id:'V-'+Date.now(),type:'Truck',capacity:18,cityAssignment:'Casablanca',primaryArea:'',startLat:null,startLng:null,linkedSatellite:null});
+    renderConfigTable();
     switchTab('config');
+    saveSession();
 }
 
 function linkSatellite(tId,sId) {
@@ -1233,6 +1253,7 @@ function renderConfigTable() {
             </select></td>
             <td><input class="editable" style="font-family:var(--mono);color:var(--yellow);width:70px;" type="number" value="${v.capacity}" onchange="updateVehicle(${i},'capacity',this.value)"></td>
             <td><input class="editable" style="width:130px;" value="${v.cityAssignment}" onchange="updateVehicle(${i},'cityAssignment',this.value)"></td>
+            <td><input class="editable" style="width:120px;text-transform:uppercase;" placeholder="e.g. MAARIF" value="${v.primaryArea||''}" onchange="updateVehicle(${i},'primaryArea',this.value.toUpperCase().trim())"></td>
             <td><input class="editable" style="font-family:var(--mono);width:100px;" type="number" step="0.0001" placeholder="33.5731" value="${v.startLat||''}" onchange="updateVehicle(${i},'startLat',this.value)"></td>
             <td><input class="editable" style="font-family:var(--mono);width:100px;" type="number" step="0.0001" placeholder="-7.5898" value="${v.startLng||''}" onchange="updateVehicle(${i},'startLng',this.value)"></td>
             <td><select class="field" style="width:150px;" onchange="linkSatellite('${v.id}',this.value)">
