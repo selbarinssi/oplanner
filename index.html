@@ -412,6 +412,8 @@ let mapInstance = null, routeLayer = null, markersLayer = null;
 let geocodeCache = {};
 let optimizedRoutes = {};
 let callsFilter = 'all';
+let slotConflicts = {};   // vId → true if vehicle has mixed AM/PM cluster
+let vehicleTravelKm = {}; // vId → estimated total km driven
 
 // ══════════════════════════════════════════════════
 //  HELPERS
@@ -722,6 +724,8 @@ function saveSession() {
             vehicles,
             optimizedRoutes,
             geocodeCache,
+            slotConflicts,
+            vehicleTravelKm,
             savedAt: Date.now()
         }));
     } catch(e) { console.warn('Session save failed:', e); }
@@ -737,6 +741,8 @@ function loadSession() {
         vehicles        = s.vehicles        || [];
         optimizedRoutes = s.optimizedRoutes || {};
         geocodeCache    = s.geocodeCache    || {};
+        slotConflicts   = s.slotConflicts   || {};
+        vehicleTravelKm = s.vehicleTravelKm || {};
         return true;
     } catch(e) { console.warn('Session restore failed:', e); return false; }
 }
@@ -807,68 +813,178 @@ function optimizeOrderSequence(orderList, origin) {
 //  AUTO-ASSIGN
 // ══════════════════════════════════════════════════
 function autoAssign() {
+    // Reset
     orders.forEach(o => { if (!PLANNABLE.has(o.status)) o.assignedTo = null; });
     optimizedRoutes = {};
+    slotConflicts   = {};
+    vehicleTravelKm = {};
 
-    const activeV = [...vehicles]
-        .filter(v => v.cityAssignment.toUpperCase()!=='DOWN')
-        .sort((a,b) => b.capacity-a.capacity);
-
+    const activeV  = vehicles.filter(v => v.cityAssignment.toUpperCase() !== 'DOWN');
     const eligible = orders.filter(o => PLANNABLE.has(o.status));
-    const sorted = [...eligible].sort((a,b)=>{
-        const aT=isTRS(a), bT=isTRS(b);
-        if (aT!==bT) return aT?-1:1;
-        if (a.city!==b.city) return a.city.localeCompare(b.city);
-        if (a.area!==b.area) return a.area.localeCompare(b.area);
-        return a.id.localeCompare(b.id);
+
+    // ── STEP 1: BUILD CLUSTERS ──────────────────────────────────────
+    // Group eligible orders into city → area → slotBucket clusters.
+    // slotBucket: 'AM' | 'PM' | 'ANY' (no slot or unrecognised)
+    function slotBucket(o) {
+        const p = slotPriority(o.timeSlot);
+        if (p === 999) return 'ANY';
+        if (p < 13)   return 'AM';
+        return 'PM';
+    }
+
+    const clusterMap = {};
+    eligible.forEach(o => {
+        const city = isTRS(o) ? 'CAS TRS' : o.city;
+        const key  = `${city}||${o.area}||${slotBucket(o)}`;
+        if (!clusterMap[key]) clusterMap[key] = {
+            city, area: o.area, slot: slotBucket(o),
+            orders: [], volume: 0, pts: 0,
+            isTRS: isTRS(o),
+        };
+        const c    = clusterMap[key];
+        const pCost = o.hasAssembly ? ASY_PT : DEL_PT;
+        c.orders.push(o);
+        c.volume += o.volume;
+        c.pts    += pCost;
     });
 
-    sorted.forEach(o => {
-        const cityMatch = isTRS(o) ? 'CAS TRS' : o.city;
-        const trucks    = activeV.filter(v=>v.cityAssignment.toLowerCase()===cityMatch.toLowerCase()&&!v.type.toUpperCase().includes('EXPRESS'));
-        const expresses = activeV.filter(v=>v.cityAssignment.toLowerCase()===cityMatch.toLowerCase()&& v.type.toUpperCase().includes('EXPRESS'));
-        let assigned = false;
+    // ── STEP 2: DETECT SLOT CONFLICTS ──────────────────────────────
+    // A conflict exists when the same city+area has both AM and PM clusters.
+    // We mark them now; the badge is applied after assignment.
+    const conflictKeys = new Set();
+    const areaSlots = {};
+    Object.values(clusterMap).forEach(c => {
+        const areaKey = `${c.city}||${c.area}`;
+        if (!areaSlots[areaKey]) areaSlots[areaKey] = new Set();
+        if (c.slot !== 'ANY') areaSlots[areaKey].add(c.slot);
+    });
+    Object.entries(areaSlots).forEach(([areaKey, slots]) => {
+        if (slots.has('AM') && slots.has('PM')) conflictKeys.add(areaKey);
+    });
 
-        for (let v of trucks) {
-            const lSat  = vehicles.find(s=>s.id===v.linkedSatellite);
-            const myOrd = orders.filter(x=>x.assignedTo===v.id);
-            const vol   = myOrd.reduce((s,x)=>s+x.volume,0);
-            const pts   = myOrd.reduce((s,x)=>s+(x.hasAssembly?(lSat?DEL_PT:ASY_PT):DEL_PT),0);
-            const pCost = o.hasAssembly?(lSat?DEL_PT:ASY_PT):DEL_PT;
-            let satOvl  = false;
-            if (o.hasAssembly&&lSat) {
-                const sOrd = orders.filter(x=>x.assignedTo===lSat.id);
-                const moms = vehicles.filter(m=>m.linkedSatellite===lSat.id);
-                const mPts = orders.filter(x=>moms.some(m=>m.id===x.assignedTo)&&x.hasAssembly).reduce((s,x)=>s+ASY_PT,0);
-                const sPts = sOrd.reduce((s,x)=>s+(x.hasAssembly?ASY_PT:DEL_PT),0)+mPts;
-                if (sPts+ASY_PT>MAX_PTS) satOvl=true;
-            }
-            if (vol+o.volume<=v.capacity && pts+pCost<=MAX_PTS && !satOvl) {
-                o.assignedTo=v.id; assigned=true; break;
+    // Tag conflict clusters
+    Object.values(clusterMap).forEach(c => {
+        c.hasConflict = conflictKeys.has(`${c.city}||${c.area}`);
+    });
+
+    // ── STEP 3: ASSIGN CLUSTERS (best-fit on pts tightness) ────────
+    // Sort clusters: TRS first, then by volume descending (biggest first).
+    const clusters = Object.values(clusterMap)
+        .sort((a, b) => {
+            if (a.isTRS !== b.isTRS) return a.isTRS ? -1 : 1;
+            return b.volume - a.volume;
+        });
+
+    // Track per-vehicle running totals for best-fit
+    const vState = {};
+    activeV.forEach(v => {
+        vState[v.id] = { vol: 0, pts: 0 };
+    });
+
+    clusters.forEach(cluster => {
+        const cityKey  = cluster.city.toLowerCase();
+        const isExpress = false; // clusters only go to trucks first
+
+        // Candidate trucks for this cluster's city
+        const trucks = activeV.filter(v =>
+            v.cityAssignment.toLowerCase() === cityKey &&
+            !v.type.toUpperCase().includes('EXPRESS')
+        );
+        const expresses = activeV.filter(v =>
+            v.cityAssignment.toLowerCase() === cityKey &&
+            v.type.toUpperCase().includes('EXPRESS')
+        );
+
+        // Best-fit: find truck where pts gap after assignment is smallest (tightest fit)
+        // while still respecting both caps
+        let bestV    = null;
+        let bestGap  = Infinity;
+
+        for (const v of trucks) {
+            const lSat  = vehicles.find(s => s.id === v.linkedSatellite);
+            const st    = vState[v.id];
+            // For assembly orders on a truck with satellite, pts cost is DEL_PT not ASY_PT
+            const clusterPts = cluster.orders.reduce((s, o) => {
+                return s + (o.hasAssembly ? (lSat ? DEL_PT : ASY_PT) : DEL_PT);
+            }, 0);
+            const clusterVol = cluster.volume;
+
+            if (st.vol + clusterVol <= v.capacity && st.pts + clusterPts <= MAX_PTS) {
+                const gap = (MAX_PTS - (st.pts + clusterPts));
+                if (gap < bestGap) { bestGap = gap; bestV = v; }
             }
         }
-        if (!assigned && o.services.some(s=>s.toLowerCase().includes('parcel'))) {
-            for (let v of expresses) {
-                const moms  = vehicles.filter(m=>m.linkedSatellite===v.id);
-                const myOrd = orders.filter(x=>x.assignedTo===v.id);
-                const mPts  = orders.filter(x=>moms.some(m=>m.id===x.assignedTo)&&x.hasAssembly).reduce((s,x)=>s+ASY_PT,0);
-                const vol   = myOrd.reduce((s,x)=>s+x.volume,0);
-                const myPts = myOrd.reduce((s,x)=>s+(x.hasAssembly?ASY_PT:DEL_PT),0);
-                const cost  = o.hasAssembly?ASY_PT:DEL_PT;
-                if (vol+o.volume<=v.capacity && myPts+mPts+cost<=MAX_PTS) {
-                    o.assignedTo=v.id; assigned=true; break;
+
+        if (bestV) {
+            // Assign all orders in this cluster to bestV
+            const lSat = vehicles.find(s => s.id === bestV.linkedSatellite);
+            const clusterPts = cluster.orders.reduce((s, o) => {
+                return s + (o.hasAssembly ? (lSat ? DEL_PT : ASY_PT) : DEL_PT);
+            }, 0);
+            cluster.orders.forEach(o => { o.assignedTo = bestV.id; });
+            vState[bestV.id].vol += cluster.volume;
+            vState[bestV.id].pts += clusterPts;
+            if (cluster.hasConflict) slotConflicts[bestV.id] = true;
+            return;
+        }
+
+        // Try express vans for parcel-only clusters
+        if (cluster.orders.every(o => o.services.some(s => s.toLowerCase().includes('parcel')))) {
+            let bestExp = null; let bestExpGap = Infinity;
+            for (const v of expresses) {
+                const st   = vState[v.id];
+                const moms = vehicles.filter(m => m.linkedSatellite === v.id);
+                const mirrorPts = orders.filter(x =>
+                    moms.some(m => m.id === x.assignedTo) && x.hasAssembly
+                ).reduce((s) => s + ASY_PT, 0);
+                const clusterPts = cluster.orders.reduce((s, o) =>
+                    s + (o.hasAssembly ? ASY_PT : DEL_PT), 0);
+                if (st.vol + cluster.volume <= v.capacity &&
+                    st.pts + mirrorPts + clusterPts <= MAX_PTS) {
+                    const gap = MAX_PTS - (st.pts + mirrorPts + clusterPts);
+                    if (gap < bestExpGap) { bestExpGap = gap; bestExp = v; }
                 }
             }
+            if (bestExp) {
+                const clusterPts = cluster.orders.reduce((s, o) =>
+                    s + (o.hasAssembly ? ASY_PT : DEL_PT), 0);
+                cluster.orders.forEach(o => { o.assignedTo = bestExp.id; });
+                vState[bestExp.id].vol += cluster.volume;
+                vState[bestExp.id].pts += clusterPts;
+                if (cluster.hasConflict) slotConflicts[bestExp.id] = true;
+                return;
+            }
         }
-        if (!assigned && trucks.length>0) o.assignedTo=trucks[0].id;
+
+        // No vehicle fit → overflow: assign to first truck with a flag, or leave unassigned
+        if (trucks.length > 0) {
+            cluster.orders.forEach(o => {
+                o.assignedTo  = trucks[0].id;
+                o.isOverflow  = true;
+            });
+            vState[trucks[0].id].vol += cluster.volume;
+            if (cluster.hasConflict) slotConflicts[trucks[0].id] = true;
+        }
+        // If no trucks at all for this city → stays unassigned (caught by ghost city)
     });
 
-    // Pre-compute optimised routes
-    [...new Set(orders.filter(o=>o.assignedTo).map(o=>o.assignedTo))].forEach(vId => {
-        const v      = vehicles.find(x=>x.id===vId);
+    // ── STEP 4: BUILD ROUTES + TRAVEL BURDEN ───────────────────────
+    [...new Set(orders.filter(o => o.assignedTo).map(o => o.assignedTo))].forEach(vId => {
+        const v      = vehicles.find(x => x.id === vId);
         const origin = getVehicleOrigin(v);
-        const myOrd  = orders.filter(o=>o.assignedTo===vId);
-        optimizedRoutes[vId] = optimizeOrderSequence(myOrd, origin).map(o=>o.id);
+        const myOrd  = orders.filter(o => o.assignedTo === vId);
+        const seq    = optimizeOrderSequence(myOrd, origin);
+        optimizedRoutes[vId] = seq.map(o => o.id);
+
+        // Travel burden: sum of haversine between consecutive stops including origin
+        let km = 0;
+        let prev = origin;
+        seq.forEach(o => {
+            const c = coordsForOrder(o);
+            km += haversine(prev, c);
+            prev = c;
+        });
+        vehicleTravelKm[vId] = Math.round(km);
     });
 
     renderAll();
@@ -1205,7 +1321,9 @@ function renderDashboard() {
             }
             const vp  = v.capacity>0?(vol/v.capacity)*100:0;
             const pp  = (totalPts/MAX_PTS)*100;
-            const ovl = vol>v.capacity||totalPts>MAX_PTS;
+            const ovl      = vol>v.capacity||totalPts>MAX_PTS;
+            const hasConflict = slotConflicts[v.id] || false;
+            const travelKm    = vehicleTravelKm[v.id] || 0;
 
             const div = document.createElement('div');
             div.className = `vcol ${isExp?'express':''} ${ovl?'warn':''}`;
@@ -1225,7 +1343,8 @@ function renderDashboard() {
                         </div>
                         <div style="text-align:right;">
                             ${ovl?'<div style="font-size:9px;font-weight:800;color:var(--red);">⚠ OVERLOAD</div>':''}
-                            <div style="font-size:9px;color:var(--t3);margin-top:2px;">⏱ ${totalAssy}m · 📦 ${myOrd.length+mirror.length}</div>
+                            ${hasConflict?'<div style="font-size:9px;font-weight:800;color:var(--amber);">⚡ SLOT CONFLICT</div>':''}
+                            <div style="font-size:9px;color:var(--t3);margin-top:2px;">⏱ ${totalAssy}m · 📦 ${myOrd.length+mirror.length} · 🚗 ${travelKm}km</div>
                         </div>
                     </div>
                     ${!isExp&&satOpts?`<select style="width:100%;background:var(--bg);border:1px solid var(--br);color:var(--t2);border-radius:6px;padding:4px 8px;font-size:10px;font-family:inherit;outline:none;margin-bottom:8px;cursor:pointer;" onchange="linkSatellite('${v.id}',this.value)">
