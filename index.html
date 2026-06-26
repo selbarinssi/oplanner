@@ -197,6 +197,7 @@
             <label class="btn b-ghost" style="cursor:pointer;">📂 Orders <input type="file" id="file-input" hidden accept=".xlsx,.xls"></label>
             <button onclick="autoAssign()" class="btn b-blue">⚡ Auto-Plan</button>
             <button onclick="exportToExcel()" class="btn b-yellow">↓ Export</button>
+            <button onclick="if(confirm('Clear session and start fresh?'))clearSession();" class="btn b-danger">🗑 Clear</button>
         </div>
     </div>
 
@@ -491,6 +492,17 @@ function switchTab(tab) {
 // ══════════════════════════════════════════════════
 //  FILE IMPORT — ORDERS
 // ══════════════════════════════════════════════════
+window.addEventListener('DOMContentLoaded', () => {
+    if (loadSession() && (orders.length || vehicles.length)) {
+        renderAll();
+        renderConfigTable();
+        populateCityFilter();
+        renderCallsTable();
+        updateRouteSelect();
+        showToast(`🔄 Session restored — ${orders.length} orders, ${vehicles.length} vehicles`);
+    }
+});
+
 document.getElementById('file-input').addEventListener('change', e => {
     const r = new FileReader();
     r.onload = evt => {
@@ -537,6 +549,7 @@ document.getElementById('file-input').addEventListener('change', e => {
         renderAll();
         populateCityFilter();
         renderCallsTable();
+        saveSession();
     };
     r.readAsArrayBuffer(e.target.files[0]);
 });
@@ -560,6 +573,7 @@ document.getElementById('fleet-input').addEventListener('change', e => {
         }));
         renderAll();
         renderConfigTable();
+        saveSession();
     };
     r.readAsArrayBuffer(e.target.files[0]);
 });
@@ -600,8 +614,8 @@ function setStatus(orderId, status) {
     if (sel) sel.className = `status-select ${status}`;
     renderAll();
     updateCallsStats();
+    saveSession();
 }
-
 function updateTimeSlot(orderId, newSlot) {
     const o = orders.find(x => x.id===orderId);
     if (o) o.timeSlot = newSlot.trim();
@@ -861,8 +875,8 @@ function autoAssign() {
     populateCityFilter();
     renderCallsTable();
     updateRouteSelect();
+    saveSession();
 }
-
 // ══════════════════════════════════════════════════
 //  EXPORT
 // ══════════════════════════════════════════════════
@@ -1063,6 +1077,7 @@ function handleDrop(e, vId) {
         optimizedRoutes[vId].push(id);
     }
     renderAll();
+    saveSession();
 }
 
 // ══════════════════════════════════════════════════
