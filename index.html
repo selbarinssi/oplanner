@@ -696,11 +696,54 @@ function getVehicleOrigin(v) {
     return CITY_COORDS[v?.cityAssignment] || [33.5731,-7.5898];
 }
 
+// ══════════════════════════════════════════════════
+//  PERSISTENCE
+// ══════════════════════════════════════════════════
+const STORAGE_KEY = 'oplanner_session_v1';
+
+function saveSession() {
+    try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({
+            orders,
+            vehicles,
+            optimizedRoutes,
+            geocodeCache,
+            savedAt: Date.now()
+        }));
+    } catch(e) { console.warn('Session save failed:', e); }
+}
+
+function loadSession() {
+    try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return false;
+        const s = JSON.parse(raw);
+        if (!s.orders?.length && !s.vehicles?.length) return false;
+        orders          = s.orders          || [];
+        vehicles        = s.vehicles        || [];
+        optimizedRoutes = s.optimizedRoutes || {};
+        geocodeCache    = s.geocodeCache    || {};
+        return true;
+    } catch(e) { console.warn('Session restore failed:', e); return false; }
+}
+
+function clearSession() {
+    localStorage.removeItem(STORAGE_KEY);
+    orders = []; vehicles = []; optimizedRoutes = {}; geocodeCache = {};
+    renderAll(); renderConfigTable(); renderCallsTable();
+}
+
+function strHash(s) {
+    let h = 0;
+    for (let i = 0; i < s.length; i++) { h = Math.imul(31, h) + s.charCodeAt(i) | 0; }
+    return h;
+}
+
 function coordsForOrder(o) {
     const key = `${o.city}_${o.area}`;
     if (geocodeCache[key]) return geocodeCache[key];
     const base = CITY_COORDS[o.city] || [31.79,-7.09];
-    const off  = AREA_OFF[o.area] || [(Math.random()-.5)*.1,(Math.random()-.5)*.1];
+    const off  = AREA_OFF[o.area] || [((strHash(o.area) & 0xFF) / 255 - 0.5) * 0.1, ((strHash(o.area + '_lng') & 0xFF) / 255 - 0.5) * 0.1];
     const c    = [base[0]+off[0], base[1]+off[1]];
     geocodeCache[key] = c;
     return c;
