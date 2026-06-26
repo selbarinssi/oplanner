@@ -1,0 +1,1226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>O'Planner - by Saad EL BARINSSI</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@300;400;500;600;700;800;900&family=Noto+Sans+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+        :root{
+            --bg:#07090F;--bg1:#0E1320;--bg2:#141B2D;--bg3:#1C2540;
+            --br:#1E2D48;--br2:#2A3D5E;
+            --blue:#0051BA;--blue2:#1A6FE0;--blue3:#3B82F6;
+            --yellow:#FBD914;--yellow2:#FDE047;
+            --green:#22C55E;--green2:#4ADE80;
+            --amber:#F59E0B;--amber2:#FCD34D;
+            --red:#EF4444;--red2:#FCA5A5;
+            --purple:#A855F7;
+            --t1:#E8EDF5;--t2:#8898B0;--t3:#4A6080;--t4:#2A3A52;
+            --mono:'Noto Sans Mono',monospace;
+        }
+        body{font-family:'Noto Sans',sans-serif;background:var(--bg);color:var(--t1);font-size:13px;line-height:1.5;min-height:100vh;}
+        ::-webkit-scrollbar{width:4px;height:4px;}
+        ::-webkit-scrollbar-thumb{background:var(--br2);border-radius:2px;}
+        #app{max-width:1960px;margin:0 auto;padding:16px 20px;}
+
+        /* ── HEADER ── */
+        .hdr{display:flex;justify-content:space-between;align-items:center;padding-bottom:14px;border-bottom:1px solid var(--br);margin-bottom:14px;}
+        .logo-wrap{display:flex;flex-direction:column;gap:2px;}
+        .logo{display:flex;align-items:center;gap:0;}
+        .logo-a{background:var(--blue);color:var(--yellow);font-weight:900;font-size:14px;padding:5px 10px;border-radius:6px 0 0 6px;letter-spacing:-.01em;}
+        .logo-b{background:var(--yellow);color:var(--blue);font-weight:900;font-size:14px;padding:5px 10px;border-radius:0 6px 6px 0;letter-spacing:-.01em;}
+        .logo-sub{display:flex;align-items:baseline;gap:8px;padding-left:2px;}
+        .logo-name{font-size:11px;font-weight:800;color:var(--t2);letter-spacing:.02em;}
+        .logo-by{font-size:9px;color:var(--t3);font-style:italic;}
+
+        /* ── TABS ── */
+        .tabs{display:flex;border-bottom:1px solid var(--br);margin-right:12px;}
+        .tab{padding:8px 14px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;background:none;border:none;border-bottom:2px solid transparent;color:var(--t3);cursor:pointer;font-family:inherit;transition:color .15s,border-color .15s;white-space:nowrap;display:flex;align-items:center;gap:5px;}
+        .tab:hover{color:var(--t2);}
+        .tab.on{color:var(--yellow);border-bottom-color:var(--yellow);}
+        .tab.calls-tab.on{color:#A78BFA;border-bottom-color:#A78BFA;}
+
+        /* ── BUTTONS ── */
+        .btn{display:inline-flex;align-items:center;gap:5px;padding:7px 14px;border:none;border-radius:8px;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;transition:filter .15s,transform .1s;white-space:nowrap;}
+        .btn:active{transform:scale(.97);}
+        .b-blue{background:var(--blue);color:#fff;} .b-blue:hover{filter:brightness(1.2);}
+        .b-yellow{background:var(--yellow);color:#111;} .b-yellow:hover{filter:brightness(1.07);}
+        .b-ghost{background:var(--bg2);color:var(--t2);border:1px solid var(--br2);} .b-ghost:hover{color:var(--t1);border-color:var(--blue2);}
+        .b-danger{background:rgba(239,68,68,.1);color:var(--red);border:1px solid rgba(239,68,68,.25);padding:3px 9px;font-size:10px;} .b-danger:hover{background:rgba(239,68,68,.2);}
+        .b-sm{padding:5px 10px;font-size:10px;}
+
+        /* ── INPUTS ── */
+        .field{width:100%;background:var(--bg);border:1px solid var(--br);color:var(--t1);border-radius:7px;padding:6px 10px;font-family:inherit;font-size:11px;outline:none;transition:border-color .15s;}
+        .field:focus{border-color:var(--blue2);}
+        .editable{background:transparent;border:none;border-bottom:1px dashed var(--br2);color:var(--t1);font-family:inherit;font-size:11px;outline:none;padding:2px 4px;width:100%;transition:border-color .15s;}
+        .editable:focus{border-bottom-color:var(--blue2);}
+
+        /* ── VEHICLE CARD ── */
+        .vcol{width:276px;flex-shrink:0;background:var(--bg1);border:1px solid var(--br);border-radius:12px;overflow:hidden;display:flex;flex-direction:column;}
+        .vcol.warn{border-color:var(--red);}
+        .vcol.express{border-color:rgba(34,197,94,.25);}
+        .vhead{padding:11px 13px;background:var(--bg2);border-bottom:1px solid var(--br);flex-shrink:0;}
+        .pbar{height:4px;background:var(--br);border-radius:2px;overflow:hidden;}
+        .pfill{height:100%;border-radius:2px;transition:width .3s;}
+
+        /* ── ORDER CARD ── */
+        .ocard{background:#fff;color:#0F172A;border-radius:8px;padding:8px 10px;margin-bottom:6px;cursor:grab;border-left:3px solid #CBD5E1;transition:box-shadow .15s,transform .1s;user-select:none;}
+        .ocard:hover{box-shadow:0 4px 14px rgba(0,0,0,.18);transform:translateY(-1px);}
+        .ocard.assy{border-left-color:#22C55E;}
+        .ocard.relieved{border-left-color:#CBD5E1;opacity:.6;}
+        .ocard.mirror{background:#F0FDF4;border:1.5px dashed #22C55E;opacity:.82;}
+        .ocard.dragging{opacity:.3;}
+        .dz{min-height:80px;transition:background .15s;border-radius:0 0 12px 12px;}
+        .dz.over{background:rgba(0,81,186,.07);}
+
+        /* ── BADGES ── */
+        .badge{display:inline-flex;align-items:center;padding:1px 6px;border-radius:3px;font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;}
+        .b-status-confirmed{background:rgba(34,197,94,.15);color:#4ADE80;border:1px solid rgba(34,197,94,.25);}
+        .b-status-unreachable{background:rgba(245,158,11,.12);color:#FCD34D;border:1px solid rgba(245,158,11,.25);}
+        .b-status-postponed{background:rgba(168,85,247,.12);color:#C084FC;border:1px solid rgba(168,85,247,.25);}
+        .b-status-cancelled{background:rgba(239,68,68,.12);color:#FCA5A5;border:1px solid rgba(239,68,68,.25);}
+        /* TRS badge */
+        .b-trs{background:rgba(251,217,20,.12);color:var(--yellow);border:1px solid rgba(251,217,20,.2);}
+        /* HD = Delivery Only */
+        .b-hd{background:rgba(59,130,246,.12);color:#93C5FD;border:1px solid rgba(59,130,246,.25);}
+        /* D&A = Delivery & Assembly */
+        .b-da{background:rgba(34,197,94,.12);color:#4ADE80;border:1px solid rgba(34,197,94,.25);}
+        .b-ghost-city{background:rgba(239,68,68,.12);color:var(--red2);border:1px solid rgba(239,68,68,.25);}
+
+        /* ── CALLS TABLE ── */
+        .calls-tbl{width:100%;border-collapse:collapse;font-size:12px;}
+        .calls-tbl th{padding:8px 12px;text-align:left;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--t3);border-bottom:1px solid var(--br);white-space:nowrap;}
+        .calls-tbl td{padding:7px 12px;border-bottom:1px solid rgba(30,45,72,.6);vertical-align:middle;}
+        .calls-tbl tr:hover td{background:rgba(255,255,255,.015);}
+        .status-select{background:var(--bg);border:1px solid var(--br);color:var(--t1);border-radius:6px;padding:4px 8px;font-family:inherit;font-size:11px;font-weight:700;outline:none;cursor:pointer;transition:border-color .15s;}
+        .status-select:focus{border-color:var(--blue2);}
+        .status-select.confirmed{border-color:rgba(34,197,94,.4);color:#4ADE80;}
+        .status-select.unreachable{border-color:rgba(245,158,11,.4);color:#FCD34D;}
+        .status-select.postponed{border-color:rgba(168,85,247,.4);color:#C084FC;}
+        .status-select.cancelled{border-color:rgba(239,68,68,.4);color:#FCA5A5;}
+
+        /* ── INLINE TIMESLOT EDIT ── */
+        .slot-input{background:transparent;border:none;border-bottom:1px dashed rgba(59,130,246,.4);color:#93C5FD;font-family:var(--mono);font-size:10px;font-weight:700;outline:none;padding:1px 4px;width:110px;transition:border-color .15s;}
+        .slot-input:focus{border-bottom-color:var(--blue2);}
+        .slot-input.am-inp{color:#86EFAC;border-bottom-color:rgba(34,197,94,.4);}
+        .slot-input.am-inp:focus{border-bottom-color:var(--green);}
+        .slot-input.pm-inp{color:#FDE68A;border-bottom-color:rgba(251,217,20,.4);}
+        .slot-input.pm-inp:focus{border-bottom-color:var(--yellow);}
+        .slot-input.eve-inp{color:#D8B4FE;border-bottom-color:rgba(168,85,247,.4);}
+
+        /* ── TIME SLOT CHIP (read-only view) ── */
+        .tslot{display:inline-block;background:rgba(59,130,246,.12);color:#93C5FD;border:1px solid rgba(59,130,246,.25);border-radius:4px;padding:1px 7px;font-size:9px;font-weight:700;font-family:var(--mono);white-space:nowrap;}
+        .tslot.am{background:rgba(34,197,94,.1);color:#86EFAC;border-color:rgba(34,197,94,.25);}
+        .tslot.pm{background:rgba(251,217,20,.1);color:#FDE68A;border-color:rgba(251,217,20,.25);}
+        .tslot.evening{background:rgba(168,85,247,.1);color:#D8B4FE;border-color:rgba(168,85,247,.25);}
+
+        /* ── COPY TOAST ── */
+        #copy-toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--bg3);border:1px solid var(--br2);color:var(--t1);padding:8px 18px;border-radius:8px;font-size:11px;font-weight:700;opacity:0;transition:opacity .2s,transform .2s;pointer-events:none;z-index:9999;}
+        #copy-toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+        /* ── STAT ── */
+        .stat{background:var(--bg2);border:1px solid var(--br);border-radius:6px;padding:4px 10px;font-size:10px;font-weight:600;color:var(--t2);}
+        .stat b{font-family:var(--mono);margin-left:4px;}
+
+        /* ── PANEL ── */
+        .panel{background:var(--bg2);border:1px solid var(--br);border-radius:11px;padding:13px;}
+
+        /* ── MAP ── */
+        #route-map{height:100%;border-radius:11px;overflow:hidden;}
+        .leaflet-container{background:#0E1320 !important;font-family:'Noto Sans',sans-serif !important;}
+
+        /* ── STOP ITEM ── */
+        .stop{display:flex;align-items:flex-start;gap:8px;padding:8px 10px;background:var(--bg1);border:1px solid var(--br);border-radius:8px;margin-bottom:5px;}
+        .snum{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;flex-shrink:0;font-family:var(--mono);}
+
+        /* ── CFG TABLE ── */
+        .cfg-tbl{width:100%;border-collapse:collapse;font-size:12px;}
+        .cfg-tbl th{padding:7px 11px;text-align:left;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--t3);border-bottom:1px solid var(--br);}
+        .cfg-tbl td{padding:8px 11px;border-bottom:1px solid rgba(30,45,72,.5);vertical-align:middle;}
+
+        /* ── SPINNER ── */
+        @keyframes spin{to{transform:rotate(360deg);}}
+        .spin{width:13px;height:13px;border:2px solid var(--br);border-top-color:var(--yellow);border-radius:50%;animation:spin .6s linear infinite;display:inline-block;}
+
+        /* ── GHOST ALERT ── */
+        .ghost-alert{background:rgba(239,68,68,.05);border:1px solid rgba(239,68,68,.18);border-radius:9px;padding:8px 13px;margin-bottom:12px;}
+
+        /* ── FILTER CHIPS ── */
+        .filter-bar{display:flex;gap:7px;align-items:center;flex-wrap:wrap;}
+        .fchip{padding:4px 12px;border-radius:20px;font-size:10px;font-weight:700;cursor:pointer;border:1.5px solid transparent;transition:all .15s;user-select:none;}
+        .fchip.active{border-color:currentColor;}
+    </style>
+</head>
+<body>
+<div id="app">
+
+    <!-- ══ COPY TOAST ══ -->
+    <div id="copy-toast">📋 Copied!</div>
+
+    <!-- ══ HEADER ══ -->
+    <div class="hdr">
+        <div style="display:flex;align-items:center;gap:16px;">
+            <!-- Logo block -->
+            <div class="logo-wrap">
+                <div class="logo">
+                    <div class="logo-a">ORDER</div>
+                    <div class="logo-b">PLANNER</div>
+                </div>
+                <div class="logo-sub">
+                    <span class="logo-name">by Saad EL BARINSSI</span>
+                    <span style="font-size:9px;color:var(--t4);font-family:var(--mono);">v10.0</span>
+                </div>
+            </div>
+            <div id="global-stats" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:8px;">
+            <div class="tabs">
+                <button class="tab on"        id="tab-plan"    onclick="switchTab('plan')">   📋 Planning</button>
+                <button class="tab calls-tab" id="tab-calls"   onclick="switchTab('calls')">  📞 Calls</button>
+                <button class="tab"           id="tab-routing" onclick="switchTab('routing')"> 🗺 Map</button>
+                <button class="tab"           id="tab-config"  onclick="switchTab('config')">  ⚙ Config</button>
+            </div>
+            <label class="btn b-ghost" style="cursor:pointer;">📂 Orders <input type="file" id="file-input" hidden accept=".xlsx,.xls"></label>
+            <button onclick="autoAssign()" class="btn b-blue">⚡ Auto-Plan</button>
+            <button onclick="exportToExcel()" class="btn b-yellow">↓ Export</button>
+        </div>
+    </div>
+
+    <!-- Ghost alert -->
+    <div id="ghost-alert" class="ghost-alert hidden">
+        <span style="font-size:9px;font-weight:800;color:var(--red);text-transform:uppercase;letter-spacing:.08em;">⚠ Cities with no fleet: </span>
+        <span id="ghost-list"></span>
+    </div>
+
+    <!-- ══ PLAN ══ -->
+    <div id="view-plan" style="display:flex;gap:13px;height:calc(100vh - 158px);">
+        <div style="width:266px;flex-shrink:0;display:flex;flex-direction:column;gap:8px;">
+            <input id="search-input" oninput="renderAll()" placeholder="Search ID, City, Area…" class="field">
+            <div style="font-size:9px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;padding:0 2px;">
+                Unassigned <span id="ua-count" style="font-family:var(--mono);color:var(--amber);">0</span>
+            </div>
+            <div id="unassigned-list" class="dz" style="flex:1;background:var(--bg1);border:1px dashed var(--br);border-radius:11px;padding:8px;overflow-y:auto;"
+                ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event,null)"></div>
+        </div>
+        <div id="teams-container" style="flex:1;display:flex;gap:16px;overflow-x:auto;padding-bottom:6px;align-items:flex-start;"></div>
+    </div>
+
+    <!-- ══ CALLS ══ -->
+    <div id="view-calls" style="display:none;height:calc(100vh - 158px);flex-direction:column;gap:11px;">
+        <!-- Filter row -->
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:9px;">
+            <div class="filter-bar">
+                <span style="font-size:9px;font-weight:800;color:var(--t3);letter-spacing:.07em;text-transform:uppercase;">Status:</span>
+                <span class="fchip active" data-f="all"        style="color:var(--t2);background:var(--bg2);">All</span>
+                <span class="fchip"        data-f="confirmed"  style="color:#4ADE80;background:rgba(34,197,94,.08);">✓ Confirmed</span>
+                <span class="fchip"        data-f="unreachable"style="color:#FCD34D;background:rgba(245,158,11,.08);">📵 Unreachable</span>
+                <span class="fchip"        data-f="postponed"  style="color:#C084FC;background:rgba(168,85,247,.08);">⏸ Postponed</span>
+                <span class="fchip"        data-f="cancelled"  style="color:#FCA5A5;background:rgba(239,68,68,.08);">✕ Cancelled</span>
+                <span style="width:1px;height:16px;background:var(--br2);margin:0 2px;"></span>
+                <!-- City filter -->
+                <span style="font-size:9px;font-weight:800;color:var(--t3);letter-spacing:.07em;text-transform:uppercase;">City:</span>
+                <select id="city-filter" class="field" style="width:160px;padding:4px 8px;" onchange="renderCallsTable()">
+                    <option value="">All Cities</option>
+                </select>
+            </div>
+            <div style="display:flex;gap:7px;align-items:center;">
+                <input id="calls-search" oninput="renderCallsTable()" placeholder="Search name, phone, ID…" class="field" style="width:210px;">
+                <div id="calls-stats" style="display:flex;gap:6px;"></div>
+            </div>
+        </div>
+
+        <!-- Table -->
+        <div style="flex:1;overflow-y:auto;background:var(--bg1);border:1px solid var(--br);border-radius:11px;">
+            <table class="calls-tbl">
+                <thead style="position:sticky;top:0;z-index:2;background:var(--bg2);">
+                    <tr>
+                        <th>Order ID</th>
+                        <th>Customer Name</th>
+                        <th>Phone</th>
+                        <th>City · Area</th>
+                        <th>Time Slot</th>
+                        <th>Type</th>
+                        <th>Service</th>
+                        <th>Value</th>
+                        <th>Status</th>
+                        <th>Assigned To</th>
+                    </tr>
+                </thead>
+                <tbody id="calls-tbody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- ══ MAP ══ -->
+    <div id="view-routing" style="display:none;height:calc(100vh - 158px);">
+        <div style="display:grid;grid-template-columns:290px 1fr;gap:13px;height:100%;">
+            <div style="display:flex;flex-direction:column;gap:9px;overflow-y:auto;">
+                <div class="panel">
+                    <div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--t3);margin-bottom:8px;">Vehicle</div>
+                    <select id="route-vehicle-select" class="field" onchange="loadRoute(this.value)" style="font-size:11px;margin-bottom:9px;"></select>
+                    <div style="display:flex;gap:7px;">
+                        <button onclick="showAllRoutes()" class="btn b-blue b-sm" style="flex:1;">🗺 All Routes</button>
+                        <button onclick="clearMap()" class="btn b-ghost b-sm">✕</button>
+                    </div>
+                </div>
+                <div id="route-summary" class="panel hidden">
+                    <div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--t3);margin-bottom:8px;">Summary</div>
+                    <div id="route-stats" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px;"></div>
+                    <div style="font-size:9px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">Stop Order</div>
+                    <div id="stop-list" style="max-height:360px;overflow-y:auto;"></div>
+                </div>
+                <div class="panel">
+                    <p style="font-size:10px;color:var(--t2);line-height:1.65;margin:0;">
+                        Routes pre-optimized in <strong style="color:var(--yellow);">Auto-Plan</strong>: area clusters → nearest-neighbor → time slot order.<br><br>
+                        Powered by <strong style="color:#93C5FD;">OpenStreetMap + OSRM</strong> — free, no key.
+                    </p>
+                </div>
+            </div>
+            <div style="position:relative;border-radius:11px;overflow:hidden;border:1px solid var(--br);">
+                <div id="route-map" style="height:100%;"></div>
+                <div id="map-loading" style="display:none;position:absolute;bottom:14px;left:50%;transform:translateX(-50%);background:rgba(14,19,32,.92);padding:7px 15px;border-radius:8px;font-size:11px;color:var(--t2);align-items:center;gap:8px;">
+                    <span class="spin"></span> Fetching route…
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ══ CONFIG ══ -->
+    <div id="view-config" style="display:none;">
+        <div style="background:var(--bg1);border:1px solid var(--br);border-radius:12px;padding:18px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+                <div>
+                    <h2 style="font-size:15px;font-weight:800;margin-bottom:3px;">Fleet Management</h2>
+                    <p style="font-size:10px;color:var(--t3);">Excel columns: <span style="font-family:var(--mono);color:var(--yellow);">Vehicle ID · Type · Capacity · Assignment · Start Lat · Start Lng</span></p>
+                </div>
+                <div style="display:flex;gap:8px;">
+                    <label class="btn b-ghost" style="cursor:pointer;font-size:11px;">📥 Import Excel <input type="file" id="fleet-input" hidden accept=".xlsx,.xls"></label>
+                    <button onclick="addNewVehicle()" class="btn b-ghost" style="font-size:11px;">+ Add</button>
+                </div>
+            </div>
+            <table class="cfg-tbl">
+                <thead><tr>
+                    <th>Vehicle ID</th><th>Type</th><th>Capacity (CBM)</th>
+                    <th>City Assignment</th><th>Start Lat</th><th>Start Lng</th>
+                    <th>Linked Satellite</th><th></th>
+                </tr></thead>
+                <tbody id="fleet-table-body"></tbody>
+            </table>
+        </div>
+    </div>
+
+</div><!-- /app -->
+
+<script>
+// ══════════════════════════════════════════════════
+// ══════════════════════════════════════════════════
+//  POSTAL MAPPING  — loaded from postal-codes.json
+// ══════════════════════════════════════════════════
+let postalMapping = {};
+let appReady = false;
+
+fetch('postal-codes.json')
+    .then(r => { if (!r.ok) throw new Error('Failed to load postal-codes.json'); return r.json(); })
+    .then(data => {
+        postalMapping = data;
+        appReady = true;
+        console.log(`✅ Postal codes loaded: ${Object.keys(data).length} entries`);
+    })
+    .catch(err => {
+        console.error('❌ Could not load postal codes:', err);
+        // App still works — orders without a postal match fall back to "Unknown"
+        appReady = true;
+    });
+
+
+// ══════════════════════════════════════════════════
+//  CONSTANTS
+// ══════════════════════════════════════════════════
+const CAS_TRS_SERVICES = [
+    // Click & Collect / in-store pickup — no delivery address, routed to CAS TRS vehicles.
+    // Excluded from Calls tab (no customer call needed).
+    "CUSTOMER COLLECTION TO CITY MALL-Tangier","Customer collection CU to Tetouan store",
+    "CUSTOMER COLLECTION CABO-CITY MALL TANGIER","Customer Collection Rabat",
+    "Customer collection CU to Zenata store","Pick up Order From IKEA MMall Shop",
+    "Customer collection CU to MM Shop","CLICK & COLLECT - RABAT",
+    "Click & Collect + Ovillage Mall Casablanca","Clik & Collect Morocco Mall Shop",
+    "Click & collect Zenata store","Click and Collect-tangier city mall",
+    "Click and collect from Tetouan","Pick up Order From IKEA Zenata Store"
+];
+const ASSEMBLY_KW  = ["Furniture Assembly","After Sales Replacement","Complete Kitchen Installation"];
+const MAX_PTS = 20, DEL_PT = 1, ASY_PT = 2.5;
+const PLANNABLE = new Set(['confirmed','unreachable']);
+
+const CITY_COORDS = {
+    "Casablanca":[33.5731,-7.5898],"CAS TRS":[33.5731,-7.5898],
+    "Rabat":[34.0209,-6.8416],"Sale":[34.0531,-6.8027],
+    "Marrakech":[31.6295,-7.9811],"Tanger":[35.7595,-5.834],
+    "Tetouan":[35.5785,-5.3684],"Fes":[34.0333,-5.0],
+    "Meknes":[33.8731,-5.5407],"Agadir":[30.4278,-9.5981],
+    "Oujda":[34.6814,-1.9086],"Kenitra":[34.261,-6.5802],
+    "Temara":[33.9208,-6.907],"Mohammedia":[33.6861,-7.3833],
+    "El Jadida":[33.2316,-8.5007],"Settat":[33.001,-7.6197],
+    "Khouribga":[32.8833,-6.9],"Beni Mellal":[32.3372,-6.3498],
+    "Safi":[32.2833,-9.2333],"Essaouira":[31.5125,-9.7749],
+    "Larache":[35.1932,-6.1567],"Nador":[35.1681,-2.9287],
+    "Taza":[34.2133,-4.0],"Berrechid":[33.2657,-7.5878],
+    "Mediouna":[33.4553,-7.5167],"Nouaceur":[33.5194,-7.6889],
+    "Bouskoura":[33.4594,-7.6556],"Skhirate":[33.85,-7.0333],
+    "Khemisset":[33.8231,-6.0654],"Dakhla":[23.7137,-15.9355],
+};
+const AREA_OFF = {
+    "AIN SEBAA":[.04,-.02],"SIDI MOUMEN":[.03,.02],"SIDI BERNOUSSI":[.05,.03],
+    "ATTACHAROUK":[.04,.01],"MAARIF":[-.01,-.04],"BOURGOGNE":[-.01,-.05],
+    "OASIS":[-.02,-.04],"AIN CHOK":[-.04,-.02],"HAY HASSANI":[-.03,.01],
+    "LISSASFA":[-.05,.03],"SIDI MAAROUF":[-.03,.04],"AIN DIAB":[-.02,-.08],
+    "HAY MY RACHID":[.01,.02],"SIDI OTHMANE":[.0,-.01],"ROCHES NOIRES":[.02,-.03],
+    "HAY MOHAMMADI TAKKADOUME":[.01,-.01],"BD ABDELMOUMEN":[-.01,-.04],
+};
+const PALETTE = ['#F87171','#FB923C','#FBBF24','#A3E635','#34D399','#38BDF8','#818CF8','#F472B6','#FBD914','#60A5FA','#E879F9','#2DD4BF'];
+
+// ══════════════════════════════════════════════════
+//  STATE
+// ══════════════════════════════════════════════════
+let orders = [];
+let vehicles = [];
+let mapInstance = null, routeLayer = null, markersLayer = null;
+let geocodeCache = {};
+let optimizedRoutes = {};
+let callsFilter = 'all';
+
+// ══════════════════════════════════════════════════
+//  HELPERS
+// ══════════════════════════════════════════════════
+function isTRS(o)  { return o.services.some(s => CAS_TRS_SERVICES.includes(s)); }
+function isAssembly(o){ return o.hasAssembly; }
+
+// Delivery type tag: TRS, HD, or D&A
+function orderTypeTag(o) {
+    if (isTRS(o)) return `<span class="badge b-trs">TRS</span>`;
+    if (isAssembly(o)) return `<span class="badge b-da">D&amp;A</span>`;
+    return `<span class="badge b-hd">HD</span>`;
+}
+
+function slotPriority(slot) {
+    if (!slot) return 999;
+    const s = String(slot).toLowerCase().trim();
+    if (!s) return 999;
+    const m = s.match(/(\d{1,2})[h:]/);
+    if (m) return parseInt(m[1]);
+    if (s.includes('matin')||s.includes('morning')||s.includes('am')) return 8;
+    if (s.includes('après')||s.includes('apres')||s.includes('after')||s.includes('pm')) return 13;
+    if (s.includes('soir')||s.includes('evening')||s.includes('night')) return 18;
+    return 999;
+}
+
+function slotClass(slot) {
+    const p = slotPriority(slot);
+    if (p < 12) return 'am';
+    if (p < 17) return 'pm';
+    if (p < 22) return 'evening';
+    return '';
+}
+
+function slotChip(slot) {
+    if (!slot || String(slot).trim()==='') return null;
+    const s = String(slot).trim();
+    return `<span class="tslot ${slotClass(s)}">${s}</span>`;
+}
+
+function slotInputClass(slot) {
+    const p = slotPriority(slot);
+    if (p < 12) return 'am-inp';
+    if (p < 17) return 'pm-inp';
+    if (p < 22) return 'eve-inp';
+    return '';
+}
+
+function copyToClipboard(text) {
+    navigator.clipboard.writeText(text).then(() => {
+        const t = document.getElementById('copy-toast');
+        t.classList.add('show');
+        setTimeout(() => t.classList.remove('show'), 1800);
+    });
+}
+
+// ══════════════════════════════════════════════════
+//  TABS
+// ══════════════════════════════════════════════════
+function switchTab(tab) {
+    ['plan','calls','routing','config'].forEach(t => {
+        const v = document.getElementById(`view-${t}`);
+        v.style.display = 'none';
+        document.getElementById(`tab-${t}`).classList.remove('on');
+    });
+    const v = document.getElementById(`view-${tab}`);
+    if (tab === 'plan')  v.style.display = 'flex';
+    else if (tab === 'calls') { v.style.display = 'flex'; v.style.flexDirection = 'column'; }
+    else v.style.display = 'block';
+    document.getElementById(`tab-${tab}`).classList.add('on');
+
+    if (tab === 'routing') { initMap(); updateRouteSelect(); }
+    if (tab === 'config')  renderConfigTable();
+    if (tab === 'calls')   { populateCityFilter(); renderCallsTable(); }
+    if (tab === 'plan')    renderAll();
+}
+
+// ══════════════════════════════════════════════════
+//  FILE IMPORT — ORDERS
+// ══════════════════════════════════════════════════
+document.getElementById('file-input').addEventListener('change', e => {
+    const r = new FileReader();
+    r.onload = evt => {
+        const wb   = XLSX.read(new Uint8Array(evt.target.result), {type:'array'});
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {range:5, header:1, defval:''});
+        const h    = rows[0];
+        const docIdx = h.indexOf("Document No.");
+        const nameIdx= h.indexOf("Service Name");
+        const pcIdx  = h.indexOf("Sell-to Postcode");
+        const volIdx = h.indexOf("Capacity Value Volume");
+        const valIdx = h.indexOf("Service Goods Value");
+        const timeSlotIdx  = 7;   // col H
+        const custNameIdx  = 36;  // col AK
+        const custPhoneIdx = 41;  // col AP
+        const assemblyIdx  = 47;
+        const grouped = {};
+        rows.slice(1).forEach(row => {
+            const id = String(row[docIdx]);
+            if (!id || id==='undefined' || id.trim()==='') return;
+            const rawPc = String(row[pcIdx]).split('.')[0].trim();
+            const map   = postalMapping[rawPc] || {city:'Unknown', area:rawPc};
+            if (!grouped[id]) {
+                grouped[id] = {
+                    id, volume:0, value:0, assembly:0,
+                    city:map.city, area:map.area,
+                    services:[], assignedTo:null, hasAssembly:false,
+                    timeSlot: String(row[timeSlotIdx]).trim() || '',
+                    custName: String(row[custNameIdx]).trim() || '',
+                    custPhone:String(row[custPhoneIdx]).trim()|| '',
+                    status: 'confirmed',
+                };
+            }
+            if (!grouped[id].custName  && row[custNameIdx])  grouped[id].custName  = String(row[custNameIdx]).trim();
+            if (!grouped[id].custPhone && row[custPhoneIdx]) grouped[id].custPhone = String(row[custPhoneIdx]).trim();
+            if (!grouped[id].timeSlot  && row[timeSlotIdx])  grouped[id].timeSlot  = String(row[timeSlotIdx]).trim();
+            grouped[id].volume   = Math.max(grouped[id].volume,   parseFloat(row[volIdx])  ||0);
+            grouped[id].value    = Math.max(grouped[id].value,    parseFloat(row[valIdx])  ||0);
+            grouped[id].assembly = Math.max(grouped[id].assembly, parseFloat(row[assemblyIdx])||0);
+            const sn = String(row[nameIdx]);
+            if (!grouped[id].services.includes(sn)) grouped[id].services.push(sn);
+            if (ASSEMBLY_KW.some(kw => sn.includes(kw))) grouped[id].hasAssembly = true;
+        });
+        orders = Object.values(grouped);
+        renderAll();
+        populateCityFilter();
+        renderCallsTable();
+    };
+    r.readAsArrayBuffer(e.target.files[0]);
+});
+
+// ══════════════════════════════════════════════════
+//  FILE IMPORT — FLEET
+// ══════════════════════════════════════════════════
+document.getElementById('fleet-input').addEventListener('change', e => {
+    const r = new FileReader();
+    r.onload = evt => {
+        const wb   = XLSX.read(new Uint8Array(evt.target.result), {type:'array'});
+        const json = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+        vehicles = json.map(v => ({
+            id:             String(v['Vehicle ID']||v['ID']||''),
+            type:           String(v['Type']||'Truck'),
+            capacity:       parseFloat(v['Capacity'])||18.0,
+            cityAssignment: String(v['Assignment']||v['City']||''),
+            startLat:       parseFloat(v['Start Lat'])||null,
+            startLng:       parseFloat(v['Start Lng'])||null,
+            linkedSatellite:null,
+        }));
+        renderAll();
+        renderConfigTable();
+    };
+    r.readAsArrayBuffer(e.target.files[0]);
+});
+
+// ══════════════════════════════════════════════════
+//  CALLS TAB
+// ══════════════════════════════════════════════════
+document.getElementById('calls-filters').addEventListener('click', e => {
+    const chip = e.target.closest('[data-f]');
+    if (!chip) return;
+    callsFilter = chip.dataset.f;
+    document.querySelectorAll('.fchip').forEach(c => c.classList.toggle('active', c===chip));
+    renderCallsTable();
+});
+
+function populateCityFilter() {
+    const sel = document.getElementById('city-filter');
+    const current = sel.value;
+    // Only non-TRS cities
+    const cities = [...new Set(
+        orders.filter(o => !isTRS(o)).map(o => o.city).filter(Boolean).sort()
+    )];
+    sel.innerHTML = '<option value="">All Cities</option>' +
+        cities.map(c => `<option value="${c}" ${current===c?'selected':''}>${c}</option>`).join('');
+}
+
+function setStatus(orderId, status) {
+    const o = orders.find(x => x.id===orderId);
+    if (!o) return;
+    o.status = status;
+    if (!PLANNABLE.has(status)) {
+        o.assignedTo = null;
+        Object.keys(optimizedRoutes).forEach(vid => {
+            optimizedRoutes[vid] = optimizedRoutes[vid].filter(id => id!==orderId);
+        });
+    }
+    const sel = document.querySelector(`select[data-oid="${orderId}"]`);
+    if (sel) sel.className = `status-select ${status}`;
+    renderAll();
+    updateCallsStats();
+}
+
+function updateTimeSlot(orderId, newSlot) {
+    const o = orders.find(x => x.id===orderId);
+    if (o) o.timeSlot = newSlot.trim();
+    // re-style the input
+    const inp = document.querySelector(`input[data-slot="${orderId}"]`);
+    if (inp) inp.className = `slot-input ${slotInputClass(newSlot)}`;
+}
+
+function renderCallsTable() {
+    const search   = (document.getElementById('calls-search')?.value||'').toLowerCase();
+    const cityFilt = document.getElementById('city-filter')?.value || '';
+
+    // Exclude TRS orders — no call needed for click & collect
+    let list = orders.filter(o => !isTRS(o));
+
+    if (callsFilter !== 'all') list = list.filter(o => o.status===callsFilter);
+    if (cityFilt)              list = list.filter(o => o.city===cityFilt);
+    if (search) list = list.filter(o =>
+        o.id.toLowerCase().includes(search) ||
+        o.custName.toLowerCase().includes(search) ||
+        o.custPhone.toLowerCase().includes(search) ||
+        o.city.toLowerCase().includes(search)
+    );
+
+    const tbody = document.getElementById('calls-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = list.map(o => `
+        <tr>
+            <td style="font-family:var(--mono);font-size:11px;font-weight:700;">${o.id}</td>
+            <td style="font-weight:600;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${o.custName||'<span style="color:var(--t3)">—</span>'}</td>
+            <td>
+                ${o.custPhone
+                    ? `<span onclick="copyToClipboard('${o.custPhone}')" title="Click to copy"
+                        style="font-family:var(--mono);font-size:11px;font-weight:600;color:#93C5FD;cursor:pointer;border-bottom:1px dashed rgba(147,197,253,.3);transition:color .15s;"
+                        onmouseover="this.style.color='#fff'" onmouseout="this.style.color='#93C5FD'">${o.custPhone}</span>`
+                    : '<span style="color:var(--t3)">—</span>'}
+            </td>
+            <td style="font-size:11px;color:var(--t2);">${o.city} · <span style="color:var(--t3);">${o.area}</span></td>
+            <td>
+                <input
+                    type="text"
+                    data-slot="${o.id}"
+                    class="slot-input ${slotInputClass(o.timeSlot)}"
+                    value="${o.timeSlot||''}"
+                    placeholder="e.g. 08h-12h"
+                    onchange="updateTimeSlot('${o.id}',this.value)"
+                    oninput="updateTimeSlot('${o.id}',this.value)"
+                    title="Edit time slot"
+                >
+            </td>
+            <td>${orderTypeTag(o)}</td>
+            <td style="max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:var(--t2);" title="${o.services[0]}">${o.services[0]}</td>
+            <td style="font-family:var(--mono);font-size:11px;font-weight:600;white-space:nowrap;">MAD ${o.value.toFixed(0)}</td>
+            <td>
+                <select data-oid="${o.id}" class="status-select ${o.status}" onchange="setStatus('${o.id}',this.value)">
+                    <option value="confirmed"   ${o.status==='confirmed'  ?'selected':''}>✓ Confirmed</option>
+                    <option value="unreachable" ${o.status==='unreachable'?'selected':''}>📵 Unreachable</option>
+                    <option value="postponed"   ${o.status==='postponed'  ?'selected':''}>⏸ Postponed</option>
+                    <option value="cancelled"   ${o.status==='cancelled'  ?'selected':''}>✕ Cancelled</option>
+                </select>
+            </td>
+            <td style="font-size:10px;font-weight:600;">
+                ${o.assignedTo
+                    ? `<span style="color:var(--green2);font-family:var(--mono);">${o.assignedTo}</span>`
+                    : '<span style="color:var(--t3);">—</span>'}
+            </td>
+        </tr>`
+    ).join('');
+    updateCallsStats();
+}
+
+function updateCallsStats() {
+    const c = document.getElementById('calls-stats');
+    if (!c) return;
+    // Count only non-TRS
+    const nonTRS = orders.filter(o => !isTRS(o));
+    const counts = {confirmed:0,unreachable:0,postponed:0,cancelled:0};
+    nonTRS.forEach(o => counts[o.status] = (counts[o.status]||0)+1);
+    c.innerHTML = `
+        <div class="stat">✓<b style="color:var(--green2);">${counts.confirmed}</b></div>
+        <div class="stat">📵<b style="color:var(--amber2);">${counts.unreachable}</b></div>
+        <div class="stat">⏸<b style="color:#C084FC;">${counts.postponed}</b></div>
+        <div class="stat">✕<b style="color:var(--red2);">${counts.cancelled}</b></div>
+    `;
+}
+
+// ══════════════════════════════════════════════════
+//  ROUTING
+// ══════════════════════════════════════════════════
+function getVehicleOrigin(v) {
+    if (v?.startLat && v?.startLng) return [v.startLat, v.startLng];
+    return CITY_COORDS[v?.cityAssignment] || [33.5731,-7.5898];
+}
+
+function coordsForOrder(o) {
+    const key = `${o.city}_${o.area}`;
+    if (geocodeCache[key]) return geocodeCache[key];
+    const base = CITY_COORDS[o.city] || [31.79,-7.09];
+    const off  = AREA_OFF[o.area] || [(Math.random()-.5)*.1,(Math.random()-.5)*.1];
+    const c    = [base[0]+off[0], base[1]+off[1]];
+    geocodeCache[key] = c;
+    return c;
+}
+
+function haversine(a,b) {
+    const R=6371,dLat=(b[0]-a[0])*Math.PI/180,dLon=(b[1]-a[1])*Math.PI/180;
+    const x=Math.sin(dLat/2)**2+Math.cos(a[0]*Math.PI/180)*Math.cos(b[0]*Math.PI/180)*Math.sin(dLon/2)**2;
+    return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+}
+
+function optimizeOrderSequence(orderList, origin) {
+    if (orderList.length<=1) return [...orderList];
+    // Group by area
+    const areaMap = {};
+    orderList.forEach(o => {
+        const k = `${o.city}__${o.area}`;
+        if (!areaMap[k]) areaMap[k] = {orders:[]};
+        areaMap[k].orders.push(o);
+    });
+    // Centroid per group
+    Object.values(areaMap).forEach(g => {
+        const cs = g.orders.map(o => coordsForOrder(o));
+        g.centroid = [cs.reduce((s,c)=>s+c[0],0)/cs.length, cs.reduce((s,c)=>s+c[1],0)/cs.length];
+    });
+    // Nearest-neighbor on centroids
+    const groups = Object.values(areaMap);
+    const unvis  = [...groups];
+    const sorted = [];
+    let cur = origin;
+    while (unvis.length>0) {
+        let bi=0, bd=Infinity;
+        unvis.forEach((g,i)=>{ const d=haversine(cur,g.centroid); if(d<bd){bd=d;bi=i;} });
+        const chosen = unvis.splice(bi,1)[0];
+        sorted.push(chosen);
+        cur = chosen.centroid;
+    }
+    // Within each group → sort by time slot
+    const result = [];
+    sorted.forEach(g => {
+        result.push(...[...g.orders].sort((a,b) => slotPriority(a.timeSlot)-slotPriority(b.timeSlot)));
+    });
+    return result;
+}
+
+// ══════════════════════════════════════════════════
+//  AUTO-ASSIGN
+// ══════════════════════════════════════════════════
+function autoAssign() {
+    orders.forEach(o => { if (!PLANNABLE.has(o.status)) o.assignedTo = null; });
+    optimizedRoutes = {};
+
+    const activeV = [...vehicles]
+        .filter(v => v.cityAssignment.toUpperCase()!=='DOWN')
+        .sort((a,b) => b.capacity-a.capacity);
+
+    const eligible = orders.filter(o => PLANNABLE.has(o.status));
+    const sorted = [...eligible].sort((a,b)=>{
+        const aT=isTRS(a), bT=isTRS(b);
+        if (aT!==bT) return aT?-1:1;
+        if (a.city!==b.city) return a.city.localeCompare(b.city);
+        if (a.area!==b.area) return a.area.localeCompare(b.area);
+        return a.id.localeCompare(b.id);
+    });
+
+    sorted.forEach(o => {
+        const cityMatch = isTRS(o) ? 'CAS TRS' : o.city;
+        const trucks    = activeV.filter(v=>v.cityAssignment.toLowerCase()===cityMatch.toLowerCase()&&!v.type.toUpperCase().includes('EXPRESS'));
+        const expresses = activeV.filter(v=>v.cityAssignment.toLowerCase()===cityMatch.toLowerCase()&& v.type.toUpperCase().includes('EXPRESS'));
+        let assigned = false;
+
+        for (let v of trucks) {
+            const lSat  = vehicles.find(s=>s.id===v.linkedSatellite);
+            const myOrd = orders.filter(x=>x.assignedTo===v.id);
+            const vol   = myOrd.reduce((s,x)=>s+x.volume,0);
+            const pts   = myOrd.reduce((s,x)=>s+(x.hasAssembly?(lSat?DEL_PT:ASY_PT):DEL_PT),0);
+            const pCost = o.hasAssembly?(lSat?DEL_PT:ASY_PT):DEL_PT;
+            let satOvl  = false;
+            if (o.hasAssembly&&lSat) {
+                const sOrd = orders.filter(x=>x.assignedTo===lSat.id);
+                const moms = vehicles.filter(m=>m.linkedSatellite===lSat.id);
+                const mPts = orders.filter(x=>moms.some(m=>m.id===x.assignedTo)&&x.hasAssembly).reduce((s,x)=>s+ASY_PT,0);
+                const sPts = sOrd.reduce((s,x)=>s+(x.hasAssembly?ASY_PT:DEL_PT),0)+mPts;
+                if (sPts+ASY_PT>MAX_PTS) satOvl=true;
+            }
+            if (vol+o.volume<=v.capacity && pts+pCost<=MAX_PTS && !satOvl) {
+                o.assignedTo=v.id; assigned=true; break;
+            }
+        }
+        if (!assigned && o.services.some(s=>s.toLowerCase().includes('parcel'))) {
+            for (let v of expresses) {
+                const moms  = vehicles.filter(m=>m.linkedSatellite===v.id);
+                const myOrd = orders.filter(x=>x.assignedTo===v.id);
+                const mPts  = orders.filter(x=>moms.some(m=>m.id===x.assignedTo)&&x.hasAssembly).reduce((s,x)=>s+ASY_PT,0);
+                const vol   = myOrd.reduce((s,x)=>s+x.volume,0);
+                const myPts = myOrd.reduce((s,x)=>s+(x.hasAssembly?ASY_PT:DEL_PT),0);
+                const cost  = o.hasAssembly?ASY_PT:DEL_PT;
+                if (vol+o.volume<=v.capacity && myPts+mPts+cost<=MAX_PTS) {
+                    o.assignedTo=v.id; assigned=true; break;
+                }
+            }
+        }
+        if (!assigned && trucks.length>0) o.assignedTo=trucks[0].id;
+    });
+
+    // Pre-compute optimised routes
+    [...new Set(orders.filter(o=>o.assignedTo).map(o=>o.assignedTo))].forEach(vId => {
+        const v      = vehicles.find(x=>x.id===vId);
+        const origin = getVehicleOrigin(v);
+        const myOrd  = orders.filter(o=>o.assignedTo===vId);
+        optimizedRoutes[vId] = optimizeOrderSequence(myOrd, origin).map(o=>o.id);
+    });
+
+    renderAll();
+    populateCityFilter();
+    renderCallsTable();
+    updateRouteSelect();
+}
+
+// ══════════════════════════════════════════════════
+//  EXPORT
+// ══════════════════════════════════════════════════
+function exportToExcel() {
+    const rows = orders.map(o => ({
+        "Order ID":       o.id,
+        "Status":         o.status.charAt(0).toUpperCase()+o.status.slice(1),
+        "Type":           isTRS(o)?'TRS':o.hasAssembly?'D&A':'HD',
+        "Customer Name":  o.custName,
+        "Customer Phone": o.custPhone,
+        "Vehicle":        o.assignedTo||'UNASSIGNED',
+        "Route Stop #":   o.assignedTo&&optimizedRoutes[o.assignedTo] ? optimizedRoutes[o.assignedTo].indexOf(o.id)+1 : '',
+        "City":           o.city,
+        "Area":           o.area,
+        "Time Slot":      o.timeSlot,
+        "Volume (CBM)":   o.volume,
+        "Assembly (m)":   o.assembly,
+        "Value (MAD)":    o.value,
+        "Services":       o.services.join(', '),
+    }));
+    const summary = vehicles.filter(v=>v.cityAssignment.toUpperCase()!=='DOWN').map(v=>{
+        const myOrd = orders.filter(o=>o.assignedTo===v.id);
+        return {
+            "Vehicle":v.id,"Type":v.type,"City":v.cityAssignment,
+            "Start Lat":v.startLat||'',"Start Lng":v.startLng||'',
+            "Orders":myOrd.length,
+            "Total Volume":myOrd.reduce((s,o)=>s+o.volume,0).toFixed(2),
+            "Capacity":v.capacity,
+            "Vol %":v.capacity>0?Math.round(myOrd.reduce((s,o)=>s+o.volume,0)/v.capacity*100)+'%':'N/A',
+        };
+    });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows),    'All Orders');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summary), 'Vehicle Summary');
+    XLSX.writeFile(wb, `Planning_${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+
+// ══════════════════════════════════════════════════
+//  MAP
+// ══════════════════════════════════════════════════
+function initMap() {
+    if (mapInstance) return;
+    mapInstance = L.map('route-map',{center:[32,-6],zoom:6});
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{
+        attribution:'© OpenStreetMap © CARTO',subdomains:'abcd',maxZoom:19
+    }).addTo(mapInstance);
+    routeLayer   = L.layerGroup().addTo(mapInstance);
+    markersLayer = L.layerGroup().addTo(mapInstance);
+}
+
+function updateRouteSelect() {
+    const sel = document.getElementById('route-vehicle-select');
+    if (!sel) return;
+    const used = [...new Set(orders.filter(o=>o.assignedTo).map(o=>o.assignedTo))];
+    sel.innerHTML = '<option value="">— Show all —</option>' +
+        used.map(vId=>{
+            const v   = vehicles.find(x=>x.id===vId);
+            const cnt = orders.filter(o=>o.assignedTo===vId).length;
+            return `<option value="${vId}">${vId}${v?' ('+v.cityAssignment+')':''} — ${cnt} stops</option>`;
+        }).join('');
+}
+
+function loadRoute(vId) {
+    if (!vId) { showAllRoutes(); return; }
+    const v      = vehicles.find(x=>x.id===vId);
+    const origin = getVehicleOrigin(v);
+    const seqIds = optimizedRoutes[vId] || orders.filter(o=>o.assignedTo===vId).map(o=>o.id);
+    const myOrd  = seqIds.map(id=>orders.find(o=>o.id===id)).filter(Boolean);
+    drawSingleRoute(myOrd, origin, vId);
+}
+
+function showAllRoutes() {
+    if (!mapInstance) initMap();
+    routeLayer.clearLayers(); markersLayer.clearLayers();
+    document.getElementById('route-summary').classList.add('hidden');
+    const used   = [...new Set(orders.filter(o=>o.assignedTo).map(o=>o.assignedTo))];
+    const allPts = [];
+    used.forEach((vId,vi) => {
+        const v      = vehicles.find(x=>x.id===vId);
+        const origin = getVehicleOrigin(v);
+        const color  = PALETTE[vi%PALETTE.length];
+        const seqIds = optimizedRoutes[vId]||orders.filter(o=>o.assignedTo===vId).map(o=>o.id);
+        const myOrd  = seqIds.map(id=>orders.find(o=>o.id===id)).filter(Boolean);
+        const coords = [origin,...myOrd.map(o=>coordsForOrder(o)),origin];
+        allPts.push(...coords);
+        L.polyline(coords,{color,weight:2.5,opacity:.7}).addTo(routeLayer);
+        L.circleMarker(origin,{radius:7,color,weight:2,fillColor:color,fillOpacity:.9})
+         .addTo(markersLayer).bindPopup(`<b>${vId}</b> — Start`);
+        myOrd.forEach((o,i)=>{
+            const c  = coordsForOrder(o);
+            const sl = o.timeSlot?` · ${o.timeSlot}`:'';
+            L.circleMarker(c,{radius:5,color,weight:2,fillColor:color,fillOpacity:.7})
+             .addTo(markersLayer)
+             .bindPopup(`<b>#${o.id}</b> Stop ${i+1}<br>${o.city} — ${o.area}${sl}`);
+        });
+    });
+    if (allPts.length>0) mapInstance.fitBounds(L.latLngBounds(allPts),{padding:[28,28]});
+}
+
+async function drawSingleRoute(myOrd, origin, vId) {
+    if (!mapInstance) initMap();
+    routeLayer.clearLayers(); markersLayer.clearLayers();
+    document.getElementById('map-loading').style.display = 'flex';
+    const stopCoords = myOrd.map(o=>coordsForOrder(o));
+    const allPoints  = [origin,...stopCoords,origin];
+    L.marker(origin,{icon:L.divIcon({
+        html:`<div style="width:15px;height:15px;border-radius:50%;background:#FBD914;border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.5);"></div>`,
+        iconSize:[15,15],iconAnchor:[7,7],className:''
+    })}).addTo(markersLayer).bindPopup('<b>🏭 Start</b>');
+    stopCoords.forEach((c,i) => {
+        const o     = myOrd[i];
+        const color = PALETTE[i%PALETTE.length];
+        const sl    = o.timeSlot?`<br><span style="font-size:10px;font-weight:700;color:#93C5FD;">${o.timeSlot}</span>`:'';
+        L.marker(c,{icon:L.divIcon({
+            html:`<div style="background:${color};width:26px;height:26px;border-radius:50%;border:2px solid rgba(255,255,255,.8);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;color:#111;box-shadow:0 2px 6px rgba(0,0,0,.4);">${i+1}</div>`,
+            iconSize:[26,26],iconAnchor:[13,13],className:''
+        })}).addTo(markersLayer)
+           .bindPopup(`<div style="font-family:sans-serif;min-width:150px;font-size:11px;"><b>#${o.id}</b>${sl}<br>${o.city} — ${o.area}<br>${o.hasAssembly?'🛠 '+o.assembly+'m':'📦 Delivery'}</div>`);
+    });
+    let drawn = false;
+    if (allPoints.length<=16) {
+        try {
+            const wp  = allPoints.map(p=>`${p[1]},${p[0]}`).join(';');
+            const res = await Promise.race([
+                fetch(`https://router.project-osrm.org/route/v1/driving/${wp}?overview=full&geometries=geojson`),
+                new Promise((_,rej)=>setTimeout(()=>rej('timeout'),7000))
+            ]);
+            const data = await res.json();
+            if (data.code==='Ok'&&data.routes.length>0) {
+                const rt = data.routes[0];
+                L.geoJSON(rt.geometry,{style:{color:'#38BDF8',weight:3,opacity:.75}}).addTo(routeLayer);
+                renderRouteSummary(myOrd, Math.round(rt.duration/60),(rt.distance/1e3).toFixed(1),vId);
+                drawn = true;
+            }
+        } catch(e){}
+    }
+    if (!drawn) {
+        L.polyline(allPoints,{color:'#38BDF8',weight:2,opacity:.6,dashArray:'6,5'}).addTo(routeLayer);
+        renderRouteSummary(myOrd,null,null,vId);
+    }
+    mapInstance.fitBounds(L.latLngBounds(allPoints),{padding:[34,34]});
+    document.getElementById('map-loading').style.display = 'none';
+}
+
+function renderRouteSummary(myOrd, durMin, distKm, vId) {
+    document.getElementById('route-summary').classList.remove('hidden');
+    const totalVol  = myOrd.reduce((s,o)=>s+o.volume,0);
+    const totalAssy = myOrd.reduce((s,o)=>s+o.assembly,0);
+    document.getElementById('route-stats').innerHTML = [
+        ['Stops',   myOrd.length,        'var(--yellow)'],
+        ['Volume',  totalVol.toFixed(1)+' CBM','#93C5FD'],
+        durMin?['Drive',`${Math.floor(durMin/60)}h${String(durMin%60).padStart(2,'0')}`,'var(--green)']:null,
+        distKm?['Dist.',distKm+' km','var(--green)']:null,
+        ['Assembly',totalAssy+'m','var(--amber2)'],
+        ['D&A Jobs',myOrd.filter(o=>o.hasAssembly).length,'var(--amber2)'],
+    ].filter(Boolean).map(([l,v,c])=>`
+        <div class="panel" style="padding:8px;">
+            <div style="font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--t3);margin-bottom:2px;">${l}</div>
+            <div style="font-size:17px;font-weight:800;font-family:var(--mono);color:${c};">${v}</div>
+        </div>`).join('');
+    document.getElementById('stop-list').innerHTML = myOrd.map((o,i)=>`
+        <div class="stop">
+            <div class="snum" style="background:${PALETTE[i%PALETTE.length]}22;color:${PALETTE[i%PALETTE.length]};border:1px solid ${PALETTE[i%PALETTE.length]}44;">${i+1}</div>
+            <div style="flex:1;min-width:0;">
+                <div style="display:flex;align-items:center;gap:5px;margin-bottom:1px;">
+                    <span style="font-size:11px;font-weight:700;font-family:var(--mono);">#${o.id}</span>
+                    ${orderTypeTag(o)}
+                </div>
+                <div style="font-size:10px;color:var(--t2);">${o.city} · ${o.area}</div>
+                ${o.timeSlot?`<div style="margin-top:3px;">${slotChip(o.timeSlot)}</div>`:''}
+                <div style="display:flex;gap:5px;margin-top:3px;flex-wrap:wrap;">
+                    ${o.hasAssembly?`<span class="badge b-da">🛠 ${o.assembly}m</span>`:'<span class="badge" style="background:rgba(148,163,184,.08);color:var(--t3);">📦 Delivery</span>'}
+                    <span class="badge" style="background:rgba(59,130,246,.1);color:#93C5FD;">${o.volume.toFixed(2)} CBM</span>
+                </div>
+            </div>
+        </div>`).join('');
+}
+
+function clearMap() {
+    if (routeLayer)   routeLayer.clearLayers();
+    if (markersLayer) markersLayer.clearLayers();
+    document.getElementById('route-summary').classList.add('hidden');
+}
+
+// ══════════════════════════════════════════════════
+//  DRAG & DROP
+// ══════════════════════════════════════════════════
+function handleDragOver(e)  { e.preventDefault(); e.currentTarget.classList.add('over'); }
+function handleDragLeave(e) { e.currentTarget.classList.remove('over'); }
+function handleDrop(e, vId) {
+    e.preventDefault(); e.currentTarget.classList.remove('over');
+    const id = e.dataTransfer.getData('text');
+    const o  = orders.find(x=>x.id===id);
+    if (!o) return;
+    o.assignedTo = vId;
+    if (vId && optimizedRoutes[vId]) {
+        optimizedRoutes[vId] = optimizedRoutes[vId].filter(x=>x!==id);
+        optimizedRoutes[vId].push(id);
+    }
+    renderAll();
+}
+
+// ══════════════════════════════════════════════════
+//  VEHICLE CONFIG
+// ══════════════════════════════════════════════════
+function updateVehicle(i, field, val) {
+    if (field==='capacity') val=parseFloat(val)||0;
+    if (field==='startLat'||field==='startLng') val=parseFloat(val)||null;
+    if (field==='id') {
+        const old = vehicles[i].id;
+        orders.forEach(o=>{ if(o.assignedTo===old) o.assignedTo=val; });
+        vehicles.forEach(v=>{ if(v.linkedSatellite===old) v.linkedSatellite=val; });
+        if (optimizedRoutes[old]) { optimizedRoutes[val]=optimizedRoutes[old]; delete optimizedRoutes[old]; }
+    }
+    vehicles[i][field]=val;
+    renderAll();
+}
+
+function addNewVehicle() {
+    vehicles.push({id:'V-'+Date.now(),type:'Truck',capacity:18,cityAssignment:'Casablanca',startLat:null,startLng:null,linkedSatellite:null});
+    switchTab('config');
+}
+
+function linkSatellite(tId,sId) {
+    const v = vehicles.find(x=>x.id===tId);
+    if (v) v.linkedSatellite=sId||null;
+    renderAll();
+}
+
+function renderConfigTable() {
+    document.getElementById('fleet-table-body').innerHTML = vehicles.map((v,i)=>`
+        <tr>
+            <td><input class="editable" style="font-weight:700;" value="${v.id}" onchange="updateVehicle(${i},'id',this.value)"></td>
+            <td><select class="field" style="width:130px;" onchange="updateVehicle(${i},'type',this.value)">
+                <option ${v.type==='Truck'?'selected':''}>Truck</option>
+                <option value="Express Van" ${v.type.includes('Express')||v.type.includes('EXPRESS')?'selected':''}>Express Van</option>
+            </select></td>
+            <td><input class="editable" style="font-family:var(--mono);color:var(--yellow);width:70px;" type="number" value="${v.capacity}" onchange="updateVehicle(${i},'capacity',this.value)"></td>
+            <td><input class="editable" style="width:130px;" value="${v.cityAssignment}" onchange="updateVehicle(${i},'cityAssignment',this.value)"></td>
+            <td><input class="editable" style="font-family:var(--mono);width:100px;" type="number" step="0.0001" placeholder="33.5731" value="${v.startLat||''}" onchange="updateVehicle(${i},'startLat',this.value)"></td>
+            <td><input class="editable" style="font-family:var(--mono);width:100px;" type="number" step="0.0001" placeholder="-7.5898" value="${v.startLng||''}" onchange="updateVehicle(${i},'startLng',this.value)"></td>
+            <td><select class="field" style="width:150px;" onchange="linkSatellite('${v.id}',this.value)">
+                <option value="">— None —</option>
+                ${vehicles.filter(s=>s.type.includes('Express')||s.type.includes('EXPRESS')).map(s=>
+                    `<option value="${s.id}" ${v.linkedSatellite===s.id?'selected':''}>${s.id}</option>`
+                ).join('')}
+            </select></td>
+            <td><button class="btn b-danger" onclick="vehicles.splice(${i},1);renderAll();renderConfigTable()">Delete</button></td>
+        </tr>`).join('');
+}
+
+// ══════════════════════════════════════════════════
+//  GLOBAL RENDER
+// ══════════════════════════════════════════════════
+function renderAll() {
+    renderUnassigned();
+    renderDashboard();
+    updateGhostCities();
+    updateGlobalStats();
+}
+
+function updateGlobalStats() {
+    const plannable  = orders.filter(o=>PLANNABLE.has(o.status));
+    const assigned   = plannable.filter(o=>o.assignedTo).length;
+    const unassigned = plannable.filter(o=>!o.assignedTo).length;
+    const vol        = plannable.filter(o=>o.assignedTo).reduce((s,o)=>s+o.volume,0);
+    const postponed  = orders.filter(o=>o.status==='postponed').length;
+    const cancelled  = orders.filter(o=>o.status==='cancelled').length;
+    document.getElementById('global-stats').innerHTML = [
+        ['Total',    orders.length,        ''],
+        ['Assigned', assigned,             ';color:var(--green2)'],
+        unassigned>0?['Unassigned',unassigned,';color:var(--amber2)']:null,
+        postponed>0 ?['Postponed', postponed, ';color:#C084FC']:null,
+        cancelled>0 ?['Cancelled', cancelled, ';color:var(--red2)']:null,
+        ['Volume',   vol.toFixed(1)+' CBM',''],
+    ].filter(Boolean).map(([l,v,s])=>`<div class="stat">${l}<b style="font-family:var(--mono)${s}">${v}</b></div>`).join('');
+}
+
+function updateGhostCities() {
+    const vc  = new Set(vehicles.map(v=>v.cityAssignment.toLowerCase()));
+    const mis = [...new Set(orders.filter(o=>!o.assignedTo&&PLANNABLE.has(o.status)).map(o=>o.city))]
+                    .filter(c=>c!=='Unknown'&&!vc.has(c.toLowerCase()));
+    document.getElementById('ghost-alert').classList.toggle('hidden', mis.length===0);
+    document.getElementById('ghost-list').innerHTML = mis.map(c=>`<span class="badge b-ghost-city" style="margin:2px 3px;">${c}</span>`).join('');
+}
+
+function renderUnassigned() {
+    const box    = document.getElementById('unassigned-list');
+    const search = document.getElementById('search-input').value.toLowerCase();
+    const list   = orders.filter(o=>PLANNABLE.has(o.status)&&!o.assignedTo&&(
+        o.id.toLowerCase().includes(search)||o.city.toLowerCase().includes(search)||o.area.toLowerCase().includes(search)
+    ));
+    document.getElementById('ua-count').textContent = list.length;
+    box.innerHTML = '';
+    list.forEach(o => box.appendChild(makeCard(o,false,false)));
+}
+
+function renderDashboard() {
+    const con    = document.getElementById('teams-container');
+    con.innerHTML = '';
+    const active = vehicles.filter(v=>v.cityAssignment.toUpperCase()!=='DOWN');
+    const cities = [...new Set(active.map(v=>v.cityAssignment.toLowerCase()))];
+
+    cities.forEach(city => {
+        const col = document.createElement('div');
+        col.style.cssText = 'display:flex;flex-direction:column;gap:8px;min-width:fit-content;';
+        col.innerHTML = `<div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.09em;color:var(--t3);padding:0 2px;">${city}</div><div style="display:flex;gap:10px;" id="row-${city.replace(/\W/g,'')}"></div>`;
+        con.appendChild(col);
+        const row = col.querySelector(`#row-${city.replace(/\W/g,'')}`);
+
+        active.filter(v=>v.cityAssignment.toLowerCase()===city).forEach(v => {
+            const isExp   = v.type.toUpperCase().includes('EXPRESS');
+            const lSat    = vehicles.find(s=>s.id===v.linkedSatellite);
+            const mothers = vehicles.filter(m=>m.linkedSatellite===v.id);
+            const myOrd   = orders.filter(o=>o.assignedTo===v.id);
+            const mirror  = mothers.length>0 ? orders.filter(o=>mothers.some(m=>m.id===o.assignedTo)&&o.hasAssembly) : [];
+            const vol     = myOrd.reduce((s,o)=>s+o.volume,0);
+            let totalPts, totalAssy;
+            if (isExp) {
+                totalPts  = myOrd.reduce((s,o)=>s+(o.hasAssembly?ASY_PT:DEL_PT),0) + mirror.reduce((s,o)=>s+ASY_PT,0);
+                totalAssy = [...myOrd,...mirror].reduce((s,o)=>s+o.assembly,0);
+            } else {
+                totalPts  = myOrd.reduce((s,o)=>s+(o.hasAssembly?(lSat?DEL_PT:ASY_PT):DEL_PT),0);
+                totalAssy = myOrd.reduce((s,o)=>s+(o.hasAssembly&&lSat?0:o.assembly),0);
+            }
+            const vp  = v.capacity>0?(vol/v.capacity)*100:0;
+            const pp  = (totalPts/MAX_PTS)*100;
+            const ovl = vol>v.capacity||totalPts>MAX_PTS;
+
+            const div = document.createElement('div');
+            div.className = `vcol ${isExp?'express':''} ${ovl?'warn':''}`;
+
+            const satOpts = vehicles.filter(s=>(s.type.includes('Express')||s.type.includes('EXPRESS'))&&s.cityAssignment===v.cityAssignment)
+                .map(s=>{
+                    const cnt = vehicles.filter(m=>m.linkedSatellite===s.id&&m.id!==v.id).length;
+                    return `<option value="${s.id}" ${v.linkedSatellite===s.id?'selected':''} ${cnt>=2&&v.linkedSatellite!==s.id?'disabled':''}>🔗 ${s.id}${cnt>=2?' (MAX)':''}</option>`;
+                }).join('');
+
+            div.innerHTML = `
+                <div class="vhead">
+                    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
+                        <div>
+                            <div style="font-size:13px;font-weight:800;letter-spacing:-.01em;">${v.id}</div>
+                            <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:${isExp?'var(--green)':'var(--t3)'};margin-top:1px;">${v.type}</div>
+                        </div>
+                        <div style="text-align:right;">
+                            ${ovl?'<div style="font-size:9px;font-weight:800;color:var(--red);">⚠ OVERLOAD</div>':''}
+                            <div style="font-size:9px;color:var(--t3);margin-top:2px;">⏱ ${totalAssy}m · 📦 ${myOrd.length+mirror.length}</div>
+                        </div>
+                    </div>
+                    ${!isExp&&satOpts?`<select style="width:100%;background:var(--bg);border:1px solid var(--br);color:var(--t2);border-radius:6px;padding:4px 8px;font-size:10px;font-family:inherit;outline:none;margin-bottom:8px;cursor:pointer;" onchange="linkSatellite('${v.id}',this.value)">
+                        <option value="">+ Link Satellite</option>${satOpts}</select>`:''}
+                    <div style="display:flex;flex-direction:column;gap:5px;">
+                        <div>
+                            <div style="display:flex;justify-content:space-between;font-size:8px;font-weight:700;color:var(--t3);margin-bottom:2px;">
+                                <span>VOL ${vol.toFixed(1)}/${v.capacity}</span>
+                                <span style="color:${vp>100?'var(--red)':'var(--t3)'};">${Math.round(vp)}%</span>
+                            </div>
+                            <div class="pbar"><div class="pfill" style="width:${Math.min(vp,100)}%;background:${vp>100?'var(--red)':'var(--blue2)'}"></div></div>
+                        </div>
+                        <div>
+                            <div style="display:flex;justify-content:space-between;font-size:8px;font-weight:700;color:var(--t3);margin-bottom:2px;">
+                                <span>PROD ${totalPts}/${MAX_PTS}</span>
+                                <span style="color:${pp>100?'var(--red)':'var(--t3)'};">${Math.round(pp)}%</span>
+                            </div>
+                            <div class="pbar"><div class="pfill" style="width:${Math.min(pp,100)}%;background:${pp>100?'var(--red)':'var(--green)'}"></div></div>
+                        </div>
+                    </div>
+                </div>
+                <div id="v-${v.id}" class="dz" style="padding:8px;flex:1;overflow-y:auto;max-height:520px;"
+                    ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event,'${v.id}')"></div>`;
+            row.appendChild(div);
+
+            const dz      = div.querySelector(`#v-${v.id}`);
+            const seqIds  = optimizedRoutes[v.id];
+            const ordered = seqIds ? seqIds.map(id=>myOrd.find(o=>o.id===id)).filter(Boolean) : myOrd;
+            ordered.forEach((o,idx) => {
+                const card = makeCard(o, false, !isExp&&o.hasAssembly&&lSat);
+                if (seqIds) {
+                    const n = document.createElement('span');
+                    n.style.cssText='display:inline-block;background:var(--blue);color:#fff;font-size:8px;font-weight:800;border-radius:3px;padding:1px 5px;margin-bottom:3px;font-family:var(--mono);';
+                    n.textContent=`Stop ${idx+1}`;
+                    card.prepend(n);
+                }
+                dz.appendChild(card);
+            });
+            mirror.forEach(o=>dz.appendChild(makeCard(o,true,false)));
+        });
+    });
+}
+
+function makeCard(o, isMirror, isRelieved) {
+    const div = document.createElement('div');
+    div.className = `ocard ${o.hasAssembly&&!isRelieved?'assy':''} ${isRelieved?'relieved':''} ${isMirror?'mirror':''}`;
+    div.draggable = !isMirror;
+    div.ondragstart = e => { e.dataTransfer.setData('text',o.id); div.classList.add('dragging'); };
+    div.ondragend   = () => div.classList.remove('dragging');
+    const sc = slotChip(o.timeSlot);
+    div.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">
+            <span style="font-size:9px;font-weight:700;color:#64748B;font-family:'Noto Sans Mono',monospace;">#${o.id}</span>
+            <div style="display:flex;gap:3px;align-items:center;">
+                ${orderTypeTag(o)}
+                <span class="badge b-status-${o.status}">${o.status==='confirmed'?'✓':o.status==='unreachable'?'📵':o.status==='postponed'?'⏸':'✕'}</span>
+                ${isMirror?'<span style="font-size:8px;font-weight:800;color:#22C55E;">MIR</span>':''}
+            </div>
+        </div>
+        <div style="font-size:10px;font-weight:800;color:#1E293B;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${o.services[0]}">${o.services[0]}</div>
+        ${sc?`<div style="margin-bottom:3px;">${sc}</div>`:''}
+        <div style="display:flex;justify-content:space-between;font-size:9px;border-top:1px solid #E2E8F0;padding-top:4px;">
+            <span style="color:#64748B;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${o.city} · ${o.area}</span>
+            <span style="font-weight:700;color:#0369A1;">${isMirror?'—':o.volume.toFixed(2)} CBM</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:9px;margin-top:2px;">
+            <span style="font-weight:700;color:${o.hasAssembly&&!isRelieved?'#059669':'#94A3B8'};">
+                ${o.hasAssembly?(isRelieved?'📦 Drop Only':'🛠 '+o.assembly+'m'):'📦 Delivery'}
+            </span>
+            <span style="color:#94A3B8;">MAD ${isMirror?'—':o.value.toFixed(0)}</span>
+        </div>`;
+    return div;
+}
+</script>
+</body>
+</html>
